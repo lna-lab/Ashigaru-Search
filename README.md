@@ -14,14 +14,50 @@ Apache-2.0 · by [Lna-Lab](https://huggingface.co/sakamakismile) · works with a
 
 ---
 
-## Why
+## Why it works — cheap scouts, a smart Commander
 
-Big agentic search harnesses spawn sub-agents, gather their results, and synthesize.
-Ashigaru-Search gives you that pattern **fully local** with a *swarm of tiny models*:
-quantize something like [LFM2.5-8B-A1B-NVFP4](https://huggingface.co/sakamakismile/LFM2.5-8B-A1B-NVFP4)
-(fits one 16 GB Blackwell, ~10 full-context sessions, near-linear aggregate throughput)
-and suddenly one GPU can run **dozens of search scouts at once**. Cheap tokens →
-breadth-first research.
+The bet behind Ashigaru-Search: **don't make one expensive model think hard — make a
+swarm of cheap ones search wide, and put the judgment in the orchestration.**
+
+A frontier agent (like Claude Code) researches by planning, fanning out to sub-agents,
+reading sources, noticing when a result is thin, and digging more — all *implicitly*,
+inside one big, costly context. Ashigaru-Search takes that same loop and **externalizes
+it** onto a swarm of tiny local models:
+
+**1. Breadth is almost free.** A small MoE like
+[LFM2.5-8B-A1B-NVFP4](https://huggingface.co/sakamakismile/LFM2.5-8B-A1B-NVFP4) (1.5B
+active) fits one 16 GB GPU and scales near-linearly — one card runs *dozens* of scouts at
+once. Covering a question from many angles at once beats one model going deep on a single
+thread.
+
+**2. The Commander makes a weak swarm reliable.** A 1.5B-active scout, alone, wavers — it
+hallucinates or chases dead ends. So the *intelligence isn't in the scout, it's in the
+scaffold*:
+- **Plan** — split the question into sharp, non-overlapping sub-questions.
+- **Supervise live** — after each lead, the Commander orders *continue / regroup / return*,
+  so a scout never burns its budget on junk.
+- **Gate quality** — thin reports (too short, no sources, "couldn't find") are caught.
+- **Escalate** — if a run comes back thin, automatically redo wider (S→M→L), so effort
+  scales to difficulty instead of being fixed up front.
+
+Cheap foot-soldiers plus a general who plans the formation, reads the field reports, and
+redirects forces — *that's the whole design, and the name.* The individual 足軽 is
+expendable and not very bright; the 大将's command is what wins the engagement.
+
+**3. You hold the dials.** What's a hidden judgment call inside a big agent is explicit
+here — search density (`S/M/L`), step budgets, live supervision, escalation depth — all
+knobs, all visible in the trace.
+
+**4. It's yours.** Fully local, no API keys, nothing leaves the box. The cost of
+"research 50 things at once" is a warm GPU, not a metered bill.
+
+> **Honest caveat:** it's a swarm of *small* models. On concrete, well-sourced questions
+> it's accurate and cited; on open-ended "what's notable" surveys it can still confidently
+> invent things (see **Live runs** below). The scaffold raises the floor — it doesn't turn
+> a 1.5B model into a domain expert.
+
+In short: one GPU, a swarm of cheap scouts, and a Commander that plans, watches, judges,
+and escalates — the agentic-search loop, made local, cheap, and controllable.
 
 ```
                  ┌──────────────────── COMMANDER (orchestrator) ──────────────────────┐
