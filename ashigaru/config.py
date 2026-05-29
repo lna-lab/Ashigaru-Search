@@ -38,6 +38,12 @@ class Config:
     # nominal fleet size the Commander assumes for S/M/L density tags (S=10%, M=50%, L=100%)
     fleet_size: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_FLEET_SIZE", "10")))
     worker_max_steps: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_WORKER_MAX_STEPS", "6")))
+    # quality gate: if a run's reports are thin, the Commander ESCALATES density and
+    # re-runs (S->M->L; a numeric count -> ×3, capped at 12).
+    escalate: bool = field(default_factory=lambda: _b("ASHIGARU_ESCALATE", True))
+    max_escalations: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_MAX_ESCALATIONS", "2")))
+    quality_min_chars: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_QUALITY_MIN_CHARS", "160")))
+    quality_judge: bool = field(default_factory=lambda: _b("ASHIGARU_QUALITY_JUDGE", True))
     search_results: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_SEARCH_RESULTS", "6")))
     fetch_char_limit: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_FETCH_CHAR_LIMIT", "6000")))
     temperature: float = field(default_factory=lambda: float(os.getenv("ASHIGARU_TEMPERATURE", "0.2")))

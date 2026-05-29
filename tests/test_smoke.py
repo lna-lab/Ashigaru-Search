@@ -32,23 +32,42 @@ def test_parser():
 def test_scout_count():
     from ashigaru.orchestrator import parse_scout_count as p
     cases = [
-        # (question, default, fleet) -> (n, cleaned, explicit)
-        (("3 compare X and Y", 6, 10), (3, "compare X and Y", True)),
-        (("5 何々について調べたい", 6, 10), (5, "何々について調べたい", True)),
-        (("99 too many", 6, 10), (12, "too many", True)),           # clamp to 12
-        (("S quick check", 6, 10), (1, "quick check", True)),       # 10% of 10 = 1
-        (("M latest on X", 6, 10), (5, "latest on X", True)),       # 50% of 10 = 5
-        (("L deep survey", 6, 10), (10, "deep survey", True)),      # 100% of 10 = 10
-        (("l lowercase tag", 6, 10), (10, "lowercase tag", True)),  # case-insensitive
-        (("S tiny fleet", 6, 6), (1, "tiny fleet", True)),          # ceil(0.6)=1, min 1
-        (("M big fleet", 6, 16), (8, "big fleet", True)),           # ceil(8.0)=8
-        (("plain question", 6, 10), (6, "plain question", False)),  # no tag -> default
-        (("5G networks", 6, 10), (6, "5G networks", False)),        # no space -> not a tag
+        # (question, default, fleet) -> (n, cleaned, kind)
+        (("3 compare X and Y", 6, 10), (3, "compare X and Y", "num")),
+        (("5 何々について調べたい", 6, 10), (5, "何々について調べたい", "num")),
+        (("99 too many", 6, 10), (12, "too many", "num")),          # clamp to 12
+        (("S quick check", 6, 10), (1, "quick check", "s")),        # 10% of 10 = 1
+        (("M latest on X", 6, 10), (5, "latest on X", "m")),        # 50% of 10 = 5
+        (("L deep survey", 6, 10), (10, "deep survey", "l")),       # 100% of 10 = 10
+        (("l lowercase tag", 6, 10), (10, "lowercase tag", "l")),   # case-insensitive
+        (("S tiny fleet", 6, 6), (1, "tiny fleet", "s")),           # ceil(0.6)=1, min 1
+        (("M big fleet", 6, 16), (8, "big fleet", "m")),            # ceil(8.0)=8
+        (("plain question", 6, 10), (6, "plain question", "default")),
+        (("5G networks", 6, 10), (6, "5G networks", "default")),    # no space -> not a tag
     ]
     for (args, exp) in cases:
         got = p(*args)
         assert got == exp, f"{args} -> {got} (expected {exp})"
     print(f"✓ scout-count/SML: {len(cases)}/{len(cases)} cases pass")
+
+
+def test_escalate():
+    from ashigaru.orchestrator import _escalate
+    from ashigaru import Config
+    c = Config(); c.fleet_size = 10
+    cases = [
+        (("s", 1), ("m", 5)),     # S(1) -> M(5)
+        (("m", 5), ("l", 10)),    # M(5) -> L(10)
+        (("l", 10), None),        # L capped
+        (("num", 1), ("num", 3)), # numeric ×3
+        (("num", 5), ("num", 12)),# 15 -> cap 12
+        (("num", 12), None),      # already capped
+        (("default", 6), ("num", 12)),  # 18 -> cap 12
+    ]
+    for (args, exp) in cases:
+        got = _escalate(args[0], args[1], c)
+        assert got == exp, f"{args} -> {got} (expected {exp})"
+    print(f"✓ escalation ladder: {len(cases)}/{len(cases)} cases pass")
 
 
 def test_orchestrator_mocked():
@@ -100,5 +119,6 @@ def test_orchestrator_mocked():
 if __name__ == "__main__":
     test_parser()
     test_scout_count()
+    test_escalate()
     test_orchestrator_mocked()
     print("\nALL SMOKE TESTS PASSED ✅")

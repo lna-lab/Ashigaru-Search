@@ -30,20 +30,49 @@ search, together fully answer it. Cover distinct facets (definitions, current st
 comparisons, caveats). Output ONLY a JSON array of strings, nothing else."""
 
 
-def parse_scout_count(question: str, default: int, fleet_size: int = 10) -> tuple[int, str, bool]:
+def _tier_count(tag: str, fleet_size: int) -> int:
+    return max(1, min(12, math.ceil(fleet_size * _SML_FRAC[tag])))
+
+
+def parse_scout_count(question: str, default: int, fleet_size: int = 10) -> tuple[int, str, str]:
     """A leading token + space picks the scout count (overrides default), clamped 1..12:
-      - "3 compare X and Y"  -> (3, "compare X and Y", True)        explicit number
+      - "3 compare X and Y"  -> (3, "compare X and Y", "num")       explicit number
       - "M latest on X"      -> density tag: S=10% / M=50% / L=100% of `fleet_size`,
                                 rounded UP (ceil), min 1 (fleet 10 -> S=1, M=5, L=10).
-    Returns (count, cleaned_question, explicit)."""
+    Returns (count, cleaned_question, kind) where kind ∈ {num, s, m, l, default}."""
     m = _NUM_RE.match(question)
     if m:
-        return max(1, min(int(m.group(1)), 12)), m.group(2).strip(), True
+        return max(1, min(int(m.group(1)), 12)), m.group(2).strip(), "num"
     m = _SML_RE.match(question)
     if m:
-        n = max(1, min(12, math.ceil(fleet_size * _SML_FRAC[m.group(1).lower()])))
-        return n, m.group(2).strip(), True
-    return default, question.strip(), False
+        tag = m.group(1).lower()
+        return _tier_count(tag, fleet_size), m.group(2).strip(), tag
+    return default, question.strip(), "default"
+
+
+def _escalate(kind: str, count: int, cfg: Config) -> tuple[str, int] | None:
+    """Next density tier on a thin run. S→M→L; numeric/default → ×3 (cap 12). None = capped."""
+    if kind in ("num", "default"):
+        nc = min(12, count * 3)
+        return ("num", nc) if nc > count else None
+    ladder = sorted({_tier_count("s", cfg.fleet_size),
+                     _tier_count("m", cfg.fleet_size),
+                     _tier_count("l", cfg.fleet_size)})
+    higher = [x for x in ladder if x > count]
+    if not higher:
+        return None
+    nxt = higher[0]
+    return ("l" if nxt == _tier_count("l", cfg.fleet_size) else "m"), nxt
+
+_FAIL_RE = re.compile(
+    r"\b(no results|couldn'?t find|could ?n'?t find|could not find|unable to find|"
+    r"no (?:relevant )?(?:information|sources|data)|not enough (?:information|evidence)|"
+    r"i (?:don'?t|do not) have)\b", re.IGNORECASE)
+
+JUDGE_SYSTEM = """You are the Commander reviewing ONE scout's report against its sub-question. \
+Decide if it actually answers the sub-question with concrete, source-grounded information \
+(not vague, not empty, not "couldn't find"). Output ONLY JSON: \
+{"ok": true|false, "hint": "if not ok, what to search or do differently"}."""
 
 SYNTH_SYSTEM = """You are the Commander. Your Ashigaru scouts each investigated one sub-question \
 and returned findings with sources. Write the final answer to the user's ORIGINAL question:
@@ -94,32 +123,96 @@ async def _synthesize(orch: LLMClient, question: str, workers: list[WorkerResult
     return strip_think(await orch.chat(msgs, temperature=cfg.temperature, max_tokens=3072))
 
 
+def _heuristic_ok(w: WorkerResult, cfg: Config) -> tuple[bool, str]:
+    """Cheap no-LLM gate for 'no substance' reports."""
+    f = (w.findings or "").strip()
+    if len(f) < cfg.quality_min_chars:
+        return False, "report too short / thin"
+    if not w.sources:
+        return False, "no sources cited"
+    if _FAIL_RE.search(f):
+        return False, "scout said it couldn't find enough"
+    return True, ""
+
+
+async def _judge(orch: LLMClient, subq: str, w: WorkerResult, cfg: Config) -> tuple[bool, str]:
+    """Commander judges whether the report actually answers the sub-question."""
+    msgs = [
+        {"role": "system", "content": JUDGE_SYSTEM},
+        {"role": "user", "content": f"Sub-question: {subq}\n\nScout report:\n{w.findings}\n\n"
+                                     f"Cited sources: {w.sources or '(none)'}"},
+    ]
+    txt = strip_think(await orch.chat(msgs, temperature=0.0, max_tokens=1536))
+    m = re.search(r"\{.*\}", txt, re.DOTALL)
+    if not m:
+        return True, ""                       # judge unsure -> don't block
+    try:
+        d = json.loads(m.group(0))
+        return bool(d.get("ok", True)), str(d.get("hint", ""))
+    except Exception:
+        return True, ""
+
+
+async def _assess(orch: LLMClient, subs: list[str], workers: list[WorkerResult],
+                  cfg: Config) -> tuple[int, int]:
+    """How many scout reports are substantive? Returns (substantive_count, needed)."""
+    async def _ok(subq: str, w: WorkerResult) -> bool:
+        ok, _ = _heuristic_ok(w, cfg)
+        if ok and cfg.quality_judge:
+            ok, _ = await _judge(orch, subq, w, cfg)
+        return ok
+    flags = await asyncio.gather(*[_ok(subs[w.index], w) for w in workers])
+    needed = max(1, math.ceil(0.5 * len(workers)))
+    return sum(1 for f in flags if f), needed
+
+
 async def research(question: str, cfg: Config | None = None, on_event=None) -> ResearchResult:
     cfg = cfg or Config()
-    # a leading "<n> " in the question explicitly sets how many scouts to dispatch
-    n, question, explicit = parse_scout_count(question, cfg.max_subquestions, cfg.fleet_size)
-    cfg.max_subquestions = n
+    # a leading "<n> " / "S|M|L " in the question sets the scout count + density tier
+    count, question, kind = parse_scout_count(question, cfg.max_subquestions, cfg.fleet_size)
+    explicit = kind != "default"
     orch = LLMClient(cfg.orch_base_url, cfg.orch_model, cfg.orch_api_key, cfg.request_timeout)
     worker_llm = LLMClient(cfg.worker_base_url, cfg.worker_model, cfg.worker_api_key, cfg.request_timeout)
     toolbox = build_toolbox(cfg)
+    sem = asyncio.Semaphore(cfg.max_concurrency)
+
+    async def _one(i: int, q: str) -> WorkerResult:
+        async with sem:
+            if on_event:
+                on_event("worker_start", {"index": i, "task": q})
+            return await run_ashigaru(worker_llm, toolbox, q, cfg, index=i, on_event=on_event)
+
     try:
-        subs = await _plan(orch, question, cfg, exact=explicit)
-        if on_event:
-            on_event("plan", {"subquestions": subs, "requested": n if explicit else None})
+        escalations = 0
+        subs: list[str] = []
+        workers: list[WorkerResult] = []
+        while True:
+            cfg.max_subquestions = count
+            subs = await _plan(orch, question, cfg, exact=(explicit or escalations > 0))
+            if on_event:
+                on_event("plan", {"subquestions": subs,
+                                  "requested": count if (explicit or escalations) else None,
+                                  "escalation": escalations})
+            workers = list(await asyncio.gather(*[_one(i, q) for i, q in enumerate(subs)]))
 
-        sem = asyncio.Semaphore(cfg.max_concurrency)
-
-        async def _one(i: int, q: str) -> WorkerResult:
-            async with sem:
-                if on_event:
-                    on_event("worker_start", {"index": i, "task": q})
-                return await run_ashigaru(worker_llm, toolbox, q, cfg, index=i, on_event=on_event)
-
-        workers = await asyncio.gather(*[_one(i, q) for i, q in enumerate(subs)])
+            if not cfg.escalate or escalations >= cfg.max_escalations:
+                break
+            good, needed = await _assess(orch, subs, workers, cfg)
+            if good >= needed:
+                break
+            nxt = _escalate(kind, count, cfg)
+            if nxt is None:
+                break  # already at the top tier / cap
+            new_kind, new_count = nxt
+            if on_event:
+                on_event("escalate", {"from": count, "to": new_count, "good": good,
+                                      "needed": needed, "kind": new_kind})
+            kind, count = new_kind, new_count
+            escalations += 1
 
         if on_event:
             on_event("synthesize", {"workers": len(workers)})
-        answer = await _synthesize(orch, question, list(workers), cfg)
+        answer = await _synthesize(orch, question, workers, cfg)
 
         sources: list[str] = []
         for w in workers:

@@ -30,6 +30,9 @@ def _make_reporter(quiet: bool):
         elif stage == "worker_done":
             tag = " (forced)" if info.get("forced") else ""
             print(f"{_G}Ashigaru #{info['index']+1} ✓ done in {info['steps']} steps{tag}{_R}", file=sys.stderr)
+        elif stage == "escalate":
+            print(f"{_Y}Commander: thin results ({info['good']}/{info['needed']} solid) "
+                  f"→ escalating {info['from']}→{info['to']} scouts, redo ↑{_R}", file=sys.stderr)
         elif stage == "synthesize":
             print(f"{_C}Commander: synthesizing {info['workers']} scout reports…{_R}", file=sys.stderr)
     return report

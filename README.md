@@ -143,6 +143,23 @@ ashigaru "how does PagedAttention work?"                  # no tag → default f
 M=5, L=10**), rounded up, minimum 1. So a calling agent can just dial *density* — light,
 medium, or deep — and the Commander sizes the raid and splits the question accordingly.
 
+### Quality gate & escalation
+
+After the scouts report, the Commander checks whether the run is **substantive** — each
+report must clear a heuristic (long enough, has sources, not "couldn't find…") and,
+optionally, an LLM judge (`ASHIGARU_QUALITY_JUDGE`, on by default) that asks *"does this
+actually answer the sub-question?"*. If too few reports are solid, it **escalates the
+density and redoes the raid**:
+
+```
+S (1) ──thin──▶ M (5) ──thin──▶ L (10) ──▶ stop (top tier)
+numeric N ──thin──▶ N×3 (capped at 12)
+```
+
+Up to `ASHIGARU_MAX_ESCALATIONS` times (default 2). So a quick `S` look that comes back
+empty is automatically re-run wider — *"go back and dig harder."* Turn it off with
+`ASHIGARU_ESCALATE=0`.
+
 ## Live runs — what it actually feels like
 
 Real runs on **one 16 GB RTX PRO 2000 Blackwell**, with **LFM2.5-8B-A1B-NVFP4**
