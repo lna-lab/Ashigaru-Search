@@ -17,7 +17,8 @@ def _make_reporter(quiet: bool):
         if quiet:
             return
         if stage == "plan":
-            print(f"{_C}Commander: planned {len(info['subquestions'])} sub-questions:{_R}", file=sys.stderr)
+            req = f" (requested {info['requested']} scouts)" if info.get("requested") else ""
+            print(f"{_C}Commander: planned {len(info['subquestions'])} sub-questions{req}:{_R}", file=sys.stderr)
             for i, q in enumerate(info["subquestions"]):
                 print(f"  {_D}{i+1}. {q}{_R}", file=sys.stderr)
         elif stage == "worker_start":
@@ -35,8 +36,12 @@ def _make_reporter(quiet: bool):
 
 
 def main():
-    ap = argparse.ArgumentParser(prog="ashigaru", description="Ashigaru-Search: local search-agent fleet.")
-    ap.add_argument("question", help="the research question")
+    ap = argparse.ArgumentParser(
+        prog="ashigaru", description="Ashigaru-Search: local search-agent fleet.",
+        epilog='Tip: lead the question with a count or density tag (half-width + space), '
+               'overrides -k: "3 ..." = 3 scouts; "S ..."/"M ..."/"L ..." = 10%%/50%%/100%% '
+               'of the fleet (ASHIGARU_FLEET_SIZE, default 10 -> S=1, M=5, L=10).')
+    ap.add_argument("question", help='research question; a leading "<n> " or "S|M|L " sets the scout count')
     ap.add_argument("--json", action="store_true", help="emit full result as JSON")
     ap.add_argument("--quiet", action="store_true", help="no progress on stderr")
     ap.add_argument("-k", "--subquestions", type=int, default=None, help="max sub-questions (scout count)")

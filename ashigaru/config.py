@@ -35,6 +35,8 @@ class Config:
     # ---- behaviour knobs ----
     max_concurrency: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_MAX_CONCURRENCY", "16")))
     max_subquestions: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_MAX_SUBQUESTIONS", "6")))
+    # nominal fleet size the Commander assumes for S/M/L density tags (S=10%, M=50%, L=100%)
+    fleet_size: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_FLEET_SIZE", "10")))
     worker_max_steps: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_WORKER_MAX_STEPS", "6")))
     search_results: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_SEARCH_RESULTS", "6")))
     fetch_char_limit: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_FETCH_CHAR_LIMIT", "6000")))

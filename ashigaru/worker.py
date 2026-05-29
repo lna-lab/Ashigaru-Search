@@ -60,7 +60,7 @@ async def run_ashigaru(llm: LLMClient, toolbox: ToolBox, task: str, cfg: Config,
 
     last_text = ""
     for step in range(1, cfg.worker_max_steps + 1):
-        text = await llm.chat(messages, temperature=cfg.temperature, max_tokens=1536)
+        text = await llm.chat(messages, temperature=cfg.temperature, max_tokens=2048)
         last_text = text
         act: Action = parse_action(text)
 
@@ -85,7 +85,7 @@ async def run_ashigaru(llm: LLMClient, toolbox: ToolBox, task: str, cfg: Config,
     # ran out of steps — force a final synthesis from what we have
     messages.append({"role": "user", "content": "Stop searching. Give your <final>…</final> report now, "
                                                  "grounded in what you found so far."})
-    text = await llm.chat(messages, temperature=cfg.temperature, max_tokens=1536)
+    text = await llm.chat(messages, temperature=cfg.temperature, max_tokens=2048)
     act = parse_action(text)
     findings = act.text.strip() if act.kind == "final" else (act.text or last_text).strip()
     for u in _URL_RE.findall(findings):

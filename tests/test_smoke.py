@@ -29,6 +29,28 @@ def test_parser():
     print("✓ parser: 7/7 cases pass")
 
 
+def test_scout_count():
+    from ashigaru.orchestrator import parse_scout_count as p
+    cases = [
+        # (question, default, fleet) -> (n, cleaned, explicit)
+        (("3 compare X and Y", 6, 10), (3, "compare X and Y", True)),
+        (("5 何々について調べたい", 6, 10), (5, "何々について調べたい", True)),
+        (("99 too many", 6, 10), (12, "too many", True)),           # clamp to 12
+        (("S quick check", 6, 10), (1, "quick check", True)),       # 10% of 10 = 1
+        (("M latest on X", 6, 10), (5, "latest on X", True)),       # 50% of 10 = 5
+        (("L deep survey", 6, 10), (10, "deep survey", True)),      # 100% of 10 = 10
+        (("l lowercase tag", 6, 10), (10, "lowercase tag", True)),  # case-insensitive
+        (("S tiny fleet", 6, 6), (1, "tiny fleet", True)),          # ceil(0.6)=1, min 1
+        (("M big fleet", 6, 16), (8, "big fleet", True)),           # ceil(8.0)=8
+        (("plain question", 6, 10), (6, "plain question", False)),  # no tag -> default
+        (("5G networks", 6, 10), (6, "5G networks", False)),        # no space -> not a tag
+    ]
+    for (args, exp) in cases:
+        got = p(*args)
+        assert got == exp, f"{args} -> {got} (expected {exp})"
+    print(f"✓ scout-count/SML: {len(cases)}/{len(cases)} cases pass")
+
+
 def test_orchestrator_mocked():
     import ashigaru.orchestrator as orch
     import ashigaru.worker as worker
@@ -77,5 +99,6 @@ def test_orchestrator_mocked():
 
 if __name__ == "__main__":
     test_parser()
+    test_scout_count()
     test_orchestrator_mocked()
     print("\nALL SMOKE TESTS PASSED ✅")

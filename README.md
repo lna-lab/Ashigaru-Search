@@ -121,6 +121,56 @@ Sources:
 
 (LFM2.5's native `<|tool_call_start|>[web_search(query="…")]<|tool_call_end|>` is also parsed.)
 
+## Pick your search density
+
+Lead the question with a **half-width tag + space** to tell the Commander how many scouts
+to send (overrides `-k`, clamped 1–12):
+
+```bash
+# explicit number
+ashigaru "3 compare vLLM and SGLang for serving LLMs"     # → exactly 3 scouts
+ashigaru "5 大規模言語モデルの量子化手法を比較して"        # → 5 scouts
+
+# S / M / L density — a fraction of the fleet, so agents don't have to pick a number
+ashigaru "S quick sanity check on FlashAttention 3"       # → 10% of fleet  (ceil, min 1)
+ashigaru "M what's new in NVFP4 tooling?"                 # → 50% of fleet
+ashigaru "L deep survey of MoE serving frameworks"        # → 100% of fleet
+
+ashigaru "how does PagedAttention work?"                  # no tag → default fan-out
+```
+
+`S`/`M`/`L` map to **10% / 50% / 100%** of `ASHIGARU_FLEET_SIZE` (default 10 → **S=1,
+M=5, L=10**), rounded up, minimum 1. So a calling agent can just dial *density* — light,
+medium, or deep — and the Commander sizes the raid and splits the question accordingly.
+
+## Live runs — what it actually feels like
+
+Real runs on **one 16 GB RTX PRO 2000 Blackwell**, with **LFM2.5-8B-A1B-NVFP4**
+(1.5B active) playing *both* Commander and every scout, searching a local SearXNG.
+Wall-clock end to end (plan → parallel scouts → synthesis):
+
+| # | question (angle) | scouts | sources | time | takeaway |
+|---|---|---:|---:|---:|---|
+| 1 | "compare vLLM and SGLang: what is each best at?" (comparison) | 3 | 2 | **~78 s** | solid, balanced synthesis; source quality varied |
+| 2 | "notable small open LLMs <10B in 2026 & strengths" (open survey) | 4 | 3 | **~111 s** | ⚠️ confident **hallucinations** — verify open-ended surveys |
+| 3 | "比较 NVFP4 和 INT8 量化的优缺点" (Chinese, technical) | 3 | 5 | **~76 s** | ✅ accurate, fluent Chinese, cited NVIDIA docs |
+| — | "what is NVFP4 & why good on Blackwell?" (technical, fewer steps) | 3 | 2 | **~48 s** | ✅ accurate, cited NVIDIA + Red Hat |
+
+What the runs teach:
+
+- **Concrete/technical questions with findable sources are the sweet spot** (#3, #4): the
+  scouts fetch primary docs and the synthesis is accurate and cited — even cross-lingual
+  (Chinese query → Chinese answer, Chinese + English sources via baidu/google).
+- **Open-ended "what's notable in X" surveys are risky** (#2): when web evidence is thin,
+  a 1.5B-active model fills gaps *confidently but wrongly* (it invented "Inflection's
+  Phi-3", "NVIDIA's Falcon-130"). Treat survey-style answers as leads to verify, not facts.
+- **Latency = breadth × depth.** More scouts and more tool steps mean more wall-clock:
+  ~48 s for a quick 3-scout run, ~75–110 s when each of 3–4 scouts runs 5–6 tool steps.
+  Planning and synthesis also spend a real reasoning budget. Tune with the scout count,
+  `ASHIGARU_WORKER_MAX_STEPS`, and `ASHIGARU_MAX_CONCURRENCY`.
+
+All of it is local — no API keys, no data leaving the box.
+
 ## Pairs well with
 
 - **[LFM2.5-8B-A1B-NVFP4](https://huggingface.co/sakamakismile/LFM2.5-8B-A1B-NVFP4)** — the
