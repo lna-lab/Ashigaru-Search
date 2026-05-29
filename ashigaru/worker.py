@@ -158,6 +158,8 @@ async def run_ashigaru(llm: LLMClient, toolbox: ToolBox, task: str, cfg: Config,
     findings = act.text.strip() if act.kind == "final" else (act.text or last_text).strip()
     for u in _URL_RE.findall(findings):
         _note(u.rstrip(".,);"))
+    recalled = step < cfg.worker_max_steps      # came home early on a 'return' order
     if on_event:
-        on_event("worker_done", {"index": index, "steps": cfg.worker_max_steps, "forced": True})
-    return WorkerResult(index, subq, _finalize(findings), sources, cfg.worker_max_steps, ok=True)
+        on_event("worker_done", {"index": index, "steps": step, "forced": not recalled,
+                                 "recalled": recalled})
+    return WorkerResult(index, subq, _finalize(findings), sources, step, ok=True)

@@ -36,7 +36,7 @@ def _make_reporter(quiet: bool):
             else:
                 print(f"  {_D}Ashigaru #{info['index']+1} ↪ Commander: continue digging{_R}", file=sys.stderr)
         elif stage == "worker_done":
-            tag = " (forced)" if info.get("forced") else ""
+            tag = " (recalled)" if info.get("recalled") else (" (forced)" if info.get("forced") else "")
             print(f"{_G}Ashigaru #{info['index']+1} ✓ done in {info['steps']} steps{tag}{_R}", file=sys.stderr)
         elif stage == "escalate":
             print(f"{_Y}Commander: thin results ({info['good']}/{info['needed']} solid) "
