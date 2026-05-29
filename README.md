@@ -160,6 +160,22 @@ Up to `ASHIGARU_MAX_ESCALATIONS` times (default 2). So a quick `S` look that com
 empty is automatically re-run wider — *"go back and dig harder."* Turn it off with
 `ASHIGARU_ESCALATE=0`.
 
+### Mid-search check-ins (the Commander steers live)
+
+A scout is a tiny model and can dig aimlessly. So after each lead it finds, it reports
+back — *"Commander, I found '…', continuing?"* — and the Commander (which sees the whole
+goal) gives one of three orders:
+
+- **continue** — only if the lead is genuinely valuable and worth more digging;
+- **regroup** — a better angle exists: file what's found as an interim note and re-launch
+  the scout on a revised focus;
+- **return** — enough found, or this dig is low-value: come home and write the report now.
+
+This biases *against wasted digging* — the small scout doesn't burn its step budget chasing
+dead ends, because the Commander okays each dig. Controlled by `ASHIGARU_SUPERVISE` (on),
+`ASHIGARU_SUPERVISE_AFTER` (1), `ASHIGARU_MAX_CHECKINS` (5). Set `ASHIGARU_SUPERVISE=0` for
+fewer LLM calls / lower latency.
+
 ## Live runs — what it actually feels like
 
 Real runs on **one 16 GB RTX PRO 2000 Blackwell**, with **LFM2.5-8B-A1B-NVFP4**

@@ -44,6 +44,11 @@ class Config:
     max_escalations: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_MAX_ESCALATIONS", "2")))
     quality_min_chars: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_QUALITY_MIN_CHARS", "160")))
     quality_judge: bool = field(default_factory=lambda: _b("ASHIGARU_QUALITY_JUDGE", True))
+    # mid-search check-ins: a scout reports a lead to the Commander, who orders
+    # continue / regroup (file an interim note, re-launch on a new focus)
+    supervise: bool = field(default_factory=lambda: _b("ASHIGARU_SUPERVISE", True))
+    supervise_after: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_SUPERVISE_AFTER", "1")))
+    max_checkins: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_MAX_CHECKINS", "5")))
     search_results: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_SEARCH_RESULTS", "6")))
     fetch_char_limit: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_FETCH_CHAR_LIMIT", "6000")))
     temperature: float = field(default_factory=lambda: float(os.getenv("ASHIGARU_TEMPERATURE", "0.2")))

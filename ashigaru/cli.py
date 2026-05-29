@@ -27,6 +27,14 @@ def _make_reporter(quiet: bool):
             a = info.get("args", {})
             arg = a.get("query") or a.get("url") or a.get("id") or ""
             print(f"  {_D}Ashigaru #{info['index']+1} step{info['step']} {info['tool']}({str(arg)[:60]}){_R}", file=sys.stderr)
+        elif stage == "worker_checkin":
+            act = info["action"]
+            if act == "regroup":
+                print(f"  {_Y}Ashigaru #{info['index']+1} ⟲ Commander: regroup → {info['focus']}{_R}", file=sys.stderr)
+            elif act == "return":
+                print(f"  {_Y}Ashigaru #{info['index']+1} ⏎ Commander: return & report{_R}", file=sys.stderr)
+            else:
+                print(f"  {_D}Ashigaru #{info['index']+1} ↪ Commander: continue digging{_R}", file=sys.stderr)
         elif stage == "worker_done":
             tag = " (forced)" if info.get("forced") else ""
             print(f"{_G}Ashigaru #{info['index']+1} ✓ done in {info['steps']} steps{tag}{_R}", file=sys.stderr)

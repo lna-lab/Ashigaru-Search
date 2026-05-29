@@ -180,7 +180,8 @@ async def research(question: str, cfg: Config | None = None, on_event=None) -> R
         async with sem:
             if on_event:
                 on_event("worker_start", {"index": i, "task": q})
-            return await run_ashigaru(worker_llm, toolbox, q, cfg, index=i, on_event=on_event)
+            return await run_ashigaru(worker_llm, toolbox, q, cfg, index=i, on_event=on_event,
+                                      orch=orch, overall=question)
 
     try:
         escalations = 0
