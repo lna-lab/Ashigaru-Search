@@ -1,8 +1,9 @@
-"""The 大将 (orchestrator): decompose a question into sub-questions, dispatch one 足軽
-per sub-question concurrently against the vLLM fleet, then synthesize a cited answer.
+"""The Commander (orchestrator): decompose a question into sub-questions, dispatch one
+Ashigaru scout per sub-question concurrently against the fleet, then synthesize a cited
+answer.
 
-The orchestrator model is pluggable (config) — it can be the same LFM2.5 fleet, a bigger
-local NVFP4 model, or any OpenAI-compatible endpoint."""
+The orchestrator model is pluggable (config) — it can be the same fleet, a bigger local
+NVFP4 model, or any OpenAI-compatible endpoint."""
 from __future__ import annotations
 import asyncio
 import json
@@ -17,13 +18,13 @@ from .worker import WorkerResult, run_ashigaru
 
 _ARR_RE = re.compile(r"\[.*\]", re.DOTALL)
 
-PLAN_SYSTEM = """You are the 大将 (commander) of a research fleet. Break the user's question \
+PLAN_SYSTEM = """You are the Commander of a research fleet. Break the user's question \
 into {n} or fewer SHARP, non-overlapping sub-questions that, once answered with web/local \
 search, together fully answer it. Cover distinct facets (definitions, current state, numbers, \
 comparisons, caveats). Output ONLY a JSON array of strings, nothing else."""
 
-SYNTH_SYSTEM = """You are the 大将. Your 足軽 scouts each investigated one sub-question and \
-returned findings with sources. Write the final answer to the user's ORIGINAL question:
+SYNTH_SYSTEM = """You are the Commander. Your Ashigaru scouts each investigated one sub-question \
+and returned findings with sources. Write the final answer to the user's ORIGINAL question:
 - Synthesize across scouts; resolve overlaps; note disagreements/uncertainty.
 - Ground every claim in the scouts' findings; do NOT add facts they didn't surface.
 - Answer in the user's language. Be direct and well-structured.

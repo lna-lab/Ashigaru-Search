@@ -1,4 +1,4 @@
-"""MCP front door — exposes the 足軽 fleet as a tool any MCP client (Claude Code,
+"""MCP front door — exposes the Ashigaru fleet as a tool any MCP client (Claude Code,
 Claude Desktop, …) can call to offload research to your local fleet.
 
 Run:  ashigaru-mcp        (stdio transport)
@@ -20,7 +20,7 @@ mcp = FastMCP("ashigaru")
 
 @mcp.tool()
 async def deep_research(query: str, max_subquestions: int = 6) -> str:
-    """Dispatch a fleet of local LLM scouts (足軽) to research a question across the web
+    """Dispatch a fleet of local LLM scouts (ashigaru) to research a question across the web
     (SearXNG) and any configured local document corpus, then return a synthesized,
     source-cited answer.
 

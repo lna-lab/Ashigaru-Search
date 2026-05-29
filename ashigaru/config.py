@@ -1,5 +1,5 @@
 """Ashigaru-Search configuration — everything is env-driven so any OpenAI-compatible
-endpoint/model can play orchestrator (大将) or worker (足軽)."""
+endpoint/model can play orchestrator (Commander) or worker (Ashigaru scout)."""
 from __future__ import annotations
 import os
 from dataclasses import dataclass, field
@@ -18,12 +18,12 @@ def _b(name: str, default: bool) -> bool:
 
 @dataclass
 class Config:
-    # ---- worker fleet (足軽): the model that runs search sub-tasks ----
+    # ---- worker fleet (Ashigaru scouts): the model that runs search sub-tasks ----
     worker_base_url: str = field(default_factory=lambda: os.getenv("ASHIGARU_WORKER_BASE_URL", "http://localhost:8000/v1"))
     worker_model: str = field(default_factory=lambda: os.getenv("ASHIGARU_WORKER_MODEL", "lfm25-8b-a1b"))
     worker_api_key: str = field(default_factory=lambda: os.getenv("ASHIGARU_WORKER_API_KEY", "EMPTY"))
 
-    # ---- orchestrator (大将): plans & synthesizes. Defaults to the worker model. ----
+    # ---- orchestrator (Commander): plans & synthesizes. Defaults to the worker model. ----
     orch_base_url: str = field(default_factory=lambda: os.getenv("ASHIGARU_ORCH_BASE_URL", ""))
     orch_model: str = field(default_factory=lambda: os.getenv("ASHIGARU_ORCH_MODEL", ""))
     orch_api_key: str = field(default_factory=lambda: os.getenv("ASHIGARU_ORCH_API_KEY", ""))

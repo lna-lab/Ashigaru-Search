@@ -1,6 +1,7 @@
-"""The 足軽 (Ashigaru) — one worker scout. Given a sub-question and a toolbox, it runs
-a bounded tool-use loop (search → read → reason) and returns grounded findings + sources.
-Works with any instruct model that can follow the simple <tool>/<final> protocol."""
+"""The Ashigaru — one worker scout (ashigaru = a foot-soldier). Given a sub-question and a
+toolbox, it runs a bounded tool-use loop (search → read → reason) and returns grounded
+findings + sources. Works with any instruct model that follows the simple <tool>/<final>
+protocol."""
 from __future__ import annotations
 import re
 from dataclasses import dataclass, field
@@ -12,7 +13,7 @@ from .llm import LLMClient
 from .registry import ToolBox
 from .toolproto import Action, parse_action, tool_result_message
 
-WORKER_SYSTEM = """You are 足軽 (Ashigaru), a focused research scout in a fleet. \
+WORKER_SYSTEM = """You are an Ashigaru, a focused research scout in a fleet. \
 Investigate ONE sub-question thoroughly with the tools, then report concise findings WITH sources.
 
 Available tools:

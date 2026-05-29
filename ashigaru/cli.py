@@ -17,29 +17,29 @@ def _make_reporter(quiet: bool):
         if quiet:
             return
         if stage == "plan":
-            print(f"{_C}大将 plan → {len(info['subquestions'])} sub-questions:{_R}", file=sys.stderr)
+            print(f"{_C}Commander: planned {len(info['subquestions'])} sub-questions:{_R}", file=sys.stderr)
             for i, q in enumerate(info["subquestions"]):
                 print(f"  {_D}{i+1}. {q}{_R}", file=sys.stderr)
         elif stage == "worker_start":
-            print(f"{_Y}足軽#{info['index']+1} ▶ {info['task'][:70]}{_R}", file=sys.stderr)
+            print(f"{_Y}Ashigaru #{info['index']+1} ▶ {info['task'][:70]}{_R}", file=sys.stderr)
         elif stage == "worker_tool":
             a = info.get("args", {})
             arg = a.get("query") or a.get("url") or a.get("id") or ""
-            print(f"  {_D}足軽#{info['index']+1} step{info['step']} {info['tool']}({str(arg)[:60]}){_R}", file=sys.stderr)
+            print(f"  {_D}Ashigaru #{info['index']+1} step{info['step']} {info['tool']}({str(arg)[:60]}){_R}", file=sys.stderr)
         elif stage == "worker_done":
             tag = " (forced)" if info.get("forced") else ""
-            print(f"{_G}足軽#{info['index']+1} ✓ done in {info['steps']} steps{tag}{_R}", file=sys.stderr)
+            print(f"{_G}Ashigaru #{info['index']+1} ✓ done in {info['steps']} steps{tag}{_R}", file=sys.stderr)
         elif stage == "synthesize":
-            print(f"{_C}大将 synthesizing {info['workers']} scout reports…{_R}", file=sys.stderr)
+            print(f"{_C}Commander: synthesizing {info['workers']} scout reports…{_R}", file=sys.stderr)
     return report
 
 
 def main():
-    ap = argparse.ArgumentParser(prog="ashigaru", description="Local search-agent fleet (足軽検索マンズ).")
+    ap = argparse.ArgumentParser(prog="ashigaru", description="Ashigaru-Search: local search-agent fleet.")
     ap.add_argument("question", help="the research question")
     ap.add_argument("--json", action="store_true", help="emit full result as JSON")
     ap.add_argument("--quiet", action="store_true", help="no progress on stderr")
-    ap.add_argument("-k", "--subquestions", type=int, default=None, help="max sub-questions (足軽 count)")
+    ap.add_argument("-k", "--subquestions", type=int, default=None, help="max sub-questions (scout count)")
     a = ap.parse_args()
 
     cfg = Config()

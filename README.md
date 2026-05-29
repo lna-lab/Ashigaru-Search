@@ -1,10 +1,12 @@
 <div align="center">
 
-# 足軽検索マンズ · Ashigaru-Search
+# 🏯 Ashigaru-Search
 
 **A fleet of small, fast, local LLMs that fan out to search — then report back.**
 
-*One commander (大将) plans, many foot-soldiers (足軽) scout the web + your docs in parallel, the commander synthesizes a cited answer.*
+*One **Commander** plans, many **Ashigaru** scouts search the web + your docs in parallel, the Commander synthesizes a cited answer.*
+
+<sub>足軽 (ashigaru) = a foot-soldier · 大将 (taishō) = the commander</sub>
 
 Apache-2.0 · by [Lna-Lab](https://huggingface.co/sakamakismile) · works with any OpenAI-compatible endpoint
 
@@ -22,16 +24,16 @@ and suddenly one GPU can run **dozens of search scouts at once**. Cheap tokens �
 breadth-first research.
 
 ```
-                 ┌──────────────────────── 大将 (orchestrator) ───────────────────────┐
+                 ┌──────────────────── COMMANDER (orchestrator) ──────────────────────┐
    question ───▶ │  plan: split into K sharp sub-questions                              │
                  └───────────────┬──────────────────────────────────────────┬──────────┘
                                  │ fan-out (async, capped by --concurrency)   │
               ┌──────────────────┼───────────────────┬──────────────────┐    │
-           足軽#1              足軽#2               足軽#3   …   足軽#K          │ collect
-        (LLM + tools)       (LLM + tools)        (LLM + tools)               │
+          Scout#1            Scout#2             Scout#3   …   Scout#K        │ collect
+        (LLM + tools)      (LLM + tools)       (LLM + tools)                  │
             │  web_search → fetch_url → doc_search → read_chunk → <final>     │
             └──────────────────┴───────────────────┴──────────────────┘    ▼
-                                                              大将 synthesize → cited answer
+                                                       COMMANDER synthesize → cited answer
 ```
 
 - **Tools:** `web_search` + `fetch_url` (self-hosted **SearXNG**, no API key) and
@@ -60,7 +62,7 @@ cp .env.example .env             # edit ASHIGARU_WORKER_* if needed
 ashigaru "What changed in NVFP4 support across recent vLLM releases?"
 ```
 
-You'll see the commander plan, the 足軽 fan out with live tool calls, then a synthesized,
+You'll see the commander plan, the Ashigaru scouts fan out with live tool calls, then a synthesized,
 source-cited answer.
 
 ### Local documents (RAG)
@@ -83,7 +85,7 @@ Register it in your MCP client, e.g. Claude Code `settings.json`:
 { "mcpServers": { "ashigaru": { "command": "ashigaru-mcp" } } }
 ```
 
-Now your cloud agent can say *"research X"* and the **local 足軽 fleet** does the legwork.
+Now your cloud agent can say *"research X"* and the **local Ashigaru fleet** does the legwork.
 
 ## Configuration
 
@@ -91,7 +93,7 @@ All via env / `.env` (see `.env.example`). Highlights:
 
 | var | default | meaning |
 |---|---|---|
-| `ASHIGARU_WORKER_BASE_URL` | `http://localhost:8000/v1` | the 足軽 fleet endpoint (vLLM) |
+| `ASHIGARU_WORKER_BASE_URL` | `http://localhost:8000/v1` | the Ashigaru fleet endpoint (vLLM) |
 | `ASHIGARU_WORKER_MODEL` | `lfm25-8b-a1b` | scout model |
 | `ASHIGARU_ORCH_BASE_URL` / `_MODEL` | = worker | commander (pluggable; point at a bigger model if you like) |
 | `SEARXNG_URL` | `http://localhost:8888` | search backend |
@@ -102,7 +104,7 @@ All via env / `.env` (see `.env.example`). Highlights:
 
 ## How a scout thinks
 
-Each 足軽 follows a tiny, model-agnostic protocol:
+Each Ashigaru scout follows a tiny, model-agnostic protocol:
 
 ```
 <tool>{"name":"web_search","arguments":{"query":"vLLM NVFP4 changelog"}}</tool>
@@ -132,6 +134,6 @@ Apache-2.0 © Lna-Lab.
 
 <div align="center">
 
-**🔬 Lna-Lab** · *send the 足軽, keep the tokens local*
+**🔬 Lna-Lab** · *send the ashigaru, keep the tokens local*
 
 </div>

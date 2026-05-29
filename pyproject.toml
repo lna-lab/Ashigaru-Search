@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ashigaru-search"
 version = "0.1.0"
-description = "A fleet of small local LLMs (足軽) that fan out to search the web (SearXNG) and local docs, then synthesize a cited answer. Any OpenAI-compatible model can command or scout."
+description = "A fleet of small local LLMs (ashigaru = foot-soldiers) that fan out to search the web (SearXNG) and local docs, then synthesize a cited answer. Any OpenAI-compatible model can command or scout."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }

@@ -39,7 +39,7 @@ def test_orchestrator_mocked():
         sys = messages[0]["content"]
         if "JSON array" in sys:                              # planner
             return '["What is X?", "How does X compare to Y?"]'
-        if "scouts each investigated" in sys:                # synthesizer (also mentions 足軽!)
+        if "scouts each investigated" in sys:                # synthesizer (also says "Ashigaru scouts")
             return "SYNTHESIZED ANSWER about X and Y.\nSources:\n- https://example.com/x"
         if "Ashigaru" in sys:                                # worker scout
             has_result = any("<tool_result" in m.get("content", "") for m in messages)

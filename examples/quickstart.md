@@ -1,7 +1,7 @@
 # Quickstart & recipes
 
 ## 0. Prereqs
-- A running OpenAI-compatible LLM server (the 足軽 fleet). Reference:
+- A running OpenAI-compatible LLM server (the Ashigaru fleet). Reference:
   ```bash
   vllm serve sakamakismile/LFM2.5-8B-A1B-NVFP4 \
       --quantization modelopt --served-model-name lfm25-8b-a1b \
@@ -22,9 +22,10 @@ cp .env.example .env
 ## 2. Run
 ```bash
 ashigaru "Compare NVFP4 and MXFP4 for MoE inference on Blackwell."
-ashigaru -k 8 "最新のローカルLLM事情を日本語でまとめて"      # 8 scouts
-ashigaru --json "..." > result.json                          # machine-readable
-ashigaru --quiet "..."                                       # no progress on stderr
+ashigaru -k 8 "Summarize the current state of open local LLMs"   # 8 scouts
+ashigaru "What's new in local LLMs? Answer in Japanese."         # multilingual: EN query, JA answer
+ashigaru --json "..." > result.json                             # machine-readable
+ashigaru --quiet "..."                                          # no progress on stderr
 ```
 
 ## 3. Add local documents
@@ -34,7 +35,7 @@ export ASHIGARU_RAG_INDEX=./papers.pkl
 ashigaru "What do my local papers say about speculative decoding?"
 ```
 
-## 4. Use a bigger commander (大将), small scouts
+## 4. Use a bigger Commander, small scouts
 ```bash
 # scouts = LFM2.5 on :8000, commander = a 27B NVFP4 on :8001
 export ASHIGARU_ORCH_BASE_URL=http://localhost:8001/v1
