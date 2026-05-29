@@ -50,7 +50,8 @@ breadth-first research.
 # 1) install
 pip install -e ".[all]"          # or: pip install ashigaru-search[all]
 
-# 2) start the search engine (self-hosted, no key)
+# 2) start the search engine (self-hosted, no key) — see docker/SEARCH_SETUP.md
+#    for English / Chinese regional engine recipes (baidu, sogou, bing, …)
 cd docker && docker compose up -d searxng && cd ..
 
 # 3) point at your local LLM fleet (a vLLM server). Example for LFM2.5-8B-A1B-NVFP4:
