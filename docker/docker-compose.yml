@@ -1,0 +1,40 @@
+# Ashigaru-Search — self-hosted search backend (and optional MCP service).
+#
+#   docker compose up -d searxng           # start the search engine (no API key)
+#   docker compose --profile app up -d      # also run the Ashigaru MCP server in a container
+#
+# SearXNG is exposed on :8888 (matches ASHIGARU's default SEARXNG_URL).
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: ashigaru-searxng
+    ports:
+      - "8888:8080"
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8888/
+      - INSTANCE_NAME=ashigaru
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID]
+    restart: unless-stopped
+
+  # Optional: run the MCP server in a container. It needs to reach BOTH SearXNG and
+  # your vLLM fleet. vLLM usually runs on the host → use host.docker.internal.
+  ashigaru-mcp:
+    profiles: ["app"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: ashigaru-mcp
+    depends_on: [searxng]
+    environment:
+      - SEARXNG_URL=http://searxng:8080
+      - ASHIGARU_WORKER_BASE_URL=${ASHIGARU_WORKER_BASE_URL:-http://host.docker.internal:8000/v1}
+      - ASHIGARU_WORKER_MODEL=${ASHIGARU_WORKER_MODEL:-lfm25-8b-a1b}
+      - ASHIGARU_MAX_CONCURRENCY=${ASHIGARU_MAX_CONCURRENCY:-16}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    stdin_open: true
+    tty: true
+    restart: unless-stopped

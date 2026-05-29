@@ -1,0 +1,25 @@
+# Minimal SearXNG settings for Ashigaru-Search.
+# Key bits: enable the JSON API (off by default) and disable the limiter so the
+# fleet can query programmatically. CHANGE the secret_key before any public exposure.
+use_default_settings: true
+
+server:
+  secret_key: "ashigaru-change-this-secret-key"
+  limiter: false           # allow programmatic JSON queries from the fleet
+  image_proxy: false
+  method: "GET"
+
+search:
+  safe_search: 0
+  formats:
+    - html
+    - json                 # <-- required: lets web_search request &format=json
+
+# Trim to fast, reliable general engines (tweak to taste).
+engines:
+  - name: duckduckgo
+    disabled: false
+  - name: brave
+    disabled: false
+  - name: wikipedia
+    disabled: false
