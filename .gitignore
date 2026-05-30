@@ -9,3 +9,10 @@ venv/
 *.pkl
 docker/searxng/settings.yml.local
 .DS_Store
+
+# KURA-Emaki scroll outputs (built locally; don't commit)
+/demo_scroll/
+/scroll/
+*_scroll/
+*.emaki/
+examples/demo_scroll/

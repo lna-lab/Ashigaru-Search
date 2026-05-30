@@ -15,6 +15,8 @@ import json
 import os
 import sys
 
+import httpx
+
 from ..config import Config
 from ..llm import LLMClient
 from ..rag_index import _read, _chunk, TEXT_EXT  # reuse the exact ingest/chunking
@@ -87,6 +89,8 @@ async def run_build(corpus: str, out: str, cfg: Config, *, chunk: int, overlap: 
                     branching: int, leaf_max: int, max_depth: int, backend: str,
                     embed_model: str | None, no_llm: bool, graph_mode: str | None,
                     on_event=None) -> dict:
+    if not os.path.isdir(corpus):
+        raise SystemExit(f"Corpus path not found (or not a directory): {corpus} — check the path.")
     chunks = ingest(corpus, chunk, overlap)
     if not chunks:
         raise SystemExit(f"No readable documents under {corpus} "
@@ -105,6 +109,11 @@ async def run_build(corpus: str, out: str, cfg: Config, *, chunk: int, overlap: 
                                         cfg.worker_api_key, cfg.request_timeout)
     try:
         await distill_tree(llm, nodes, root_id, chunk_text, cfg, on_event=on_event)
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, httpx.PoolTimeout) as e:
+        print(f"  [warn] worker LLM unreachable at {cfg.worker_base_url} ({type(e).__name__}) — "
+              f"building heuristic cards offline. Pass --no-llm to silence, or start your vLLM "
+              f"server for distilled cards.", file=sys.stderr)
+        await distill_tree(None, nodes, root_id, chunk_text, cfg, on_event=on_event)
     finally:
         if llm is not None:
             await llm.aclose()
@@ -120,8 +129,16 @@ async def run_build(corpus: str, out: str, cfg: Config, *, chunk: int, overlap: 
 
     if graph_mode:
         from .graph import build_graph                      # lazy: graph is opt-in
-        g = await build_graph(chunks, nodes, out, mode=graph_mode, cfg=cfg, on_event=on_event)
-        manifest["graph"] = g
+        try:
+            g = await build_graph(chunks, nodes, out, mode=graph_mode, cfg=cfg, on_event=on_event)
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, httpx.PoolTimeout) as e:
+            if graph_mode != "llm":
+                raise
+            print(f"  [warn] worker LLM unreachable for --graph-llm ({type(e).__name__}) — "
+                  f"falling back to the zero-infra co-occurrence graph.", file=sys.stderr)
+            graph_mode = "cooccur"
+            g = await build_graph(chunks, nodes, out, mode="cooccur", cfg=cfg, on_event=on_event)
+        manifest["graph"], manifest["graph_mode"] = g, graph_mode
         with open(os.path.join(out, "manifest.json"), "w", encoding="utf-8") as f:
             json.dump(manifest, f, ensure_ascii=False, indent=1)
     return manifest

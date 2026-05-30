@@ -3,7 +3,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
+
+import httpx
 
 from .config import Config
 from .orchestrator import research
@@ -62,7 +65,31 @@ def main():
     if a.subquestions:
         cfg.max_subquestions = a.subquestions
 
-    res = asyncio.run(research(a.question, cfg, on_event=_make_reporter(a.quiet)))
+    # a scroll path set but unusable is otherwise silently ignored — say so, don't mislead
+    if cfg.emaki_tree and not cfg.has_emaki:
+        if not os.path.isdir(cfg.emaki_tree):
+            print(f"[warn] ASHIGARU_EMAKI={cfg.emaki_tree} does not exist — scroll navigation OFF "
+                  f"(falling back to web/BM25).", file=sys.stderr)
+        else:
+            print(f"[warn] ASHIGARU_EMAKI={cfg.emaki_tree} has no tree.json — not a built scroll. "
+                  f"Build one first: ashigaru-emaki <corpus> <out>. Navigation OFF.", file=sys.stderr)
+
+    try:
+        res = asyncio.run(research(a.question, cfg, on_event=_make_reporter(a.quiet)))
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, httpx.PoolTimeout,
+            httpx.HTTPStatusError) as e:
+        lines = [f"\nCouldn't reach a required service ({type(e).__name__}).",
+                 f"  • LLM fleet expected at: {cfg.worker_base_url}  (is your vLLM / llama.cpp server up?)",
+                 f"  • SearXNG expected at:   {cfg.searxng_url}  "
+                 f"(try: docker compose -f docker/docker-compose.yml up -d searxng)"]
+        if isinstance(e, httpx.HTTPStatusError) and e.response is not None \
+                and e.response.status_code in (400, 404):
+            lines.append(f"  • {e.response.status_code} from the LLM — check ASHIGARU_WORKER_MODEL "
+                         f"matches your server's --served-model-name and the base URL ends in /v1.")
+        lines.append("  No infra handy? Try the offline demo: "
+                     "ashigaru-emaki . ./demo_scroll --no-llm --graph")
+        print("\n".join(lines), file=sys.stderr)
+        sys.exit(1)
 
     if a.json:
         print(json.dumps({

@@ -28,6 +28,8 @@ mcp = ["mcp>=1.2"]
 extract = ["trafilatura>=1.8"]   # nicer main-text extraction for fetch_url
 pdf = ["pypdf>=4.0"]             # index .pdf in local RAG
 emaki = ["sentence-transformers>=2.2"]  # opt-in embedding backend for KURA-Emaki clustering
+# [all] deliberately omits [emaki] (sentence-transformers pulls a heavy torch stack); the default
+# TF-IDF clustering needs nothing extra — install .[all,emaki] only if you want `ashigaru-emaki --embed`.
 all = ["mcp>=1.2", "trafilatura>=1.8", "pypdf>=4.0"]
 
 [project.urls]

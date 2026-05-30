@@ -37,8 +37,13 @@ def make_web_tools(cfg: Config, client: httpx.AsyncClient) -> list[Tool]:
         params = {"q": query, "format": "json", "safesearch": "0"}
         if args.get("lang"):
             params["language"] = str(args["lang"])
-        r = await client.get(f"{cfg.searxng_url.rstrip('/')}/search", params=params)
-        r.raise_for_status()
+        try:
+            r = await client.get(f"{cfg.searxng_url.rstrip('/')}/search", params=params)
+            r.raise_for_status()
+        except httpx.HTTPError as e:
+            return (f"ERROR: can't reach SearXNG at {cfg.searxng_url} ({type(e).__name__}). "
+                    f"Is it running?  Start it with: "
+                    f"docker compose -f docker/docker-compose.yml up -d searxng")
         results = r.json().get("results", [])[:n]
         if not results:
             return f"No results for: {query}"

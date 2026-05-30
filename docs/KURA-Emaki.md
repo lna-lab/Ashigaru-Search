@@ -49,7 +49,10 @@ A build produces a scroll directory with **two** navigable structures:
 ## Build
 
 ```bash
-# zero-GPU by default: hand-rolled TF-IDF + spherical k-means clustering, fleet-distilled cards
+# zero infrastructure — no model, no Docker, no network (heuristic cards + co-occurrence graph)
+ashigaru-emaki ./my_corpus ./my_scroll --no-llm --graph
+
+# zero-GPU by default: TF-IDF + spherical k-means clustering, cards distilled by your local fleet
 ashigaru-emaki ./my_corpus ./my_scroll
 
 # also build a knowledge graph (zero-GPU co-occurrence)

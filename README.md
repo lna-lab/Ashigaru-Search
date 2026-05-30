@@ -82,13 +82,30 @@ and escalates — the agentic-search loop, made local, cheap, and controllable.
 
 ## Quickstart
 
+### ⚡ 30-second taste — no GPU, no Docker, no network
+
+Turn any folder of text into a navigable knowledge **scroll** (here, the repo itself). This is
+the offline side of **KURA-Emaki** (below) — no model, no server, ~1 second:
+
+```bash
+pip install -e .                                   # core only — no model needed
+ashigaru-emaki . ./demo_scroll --no-llm --graph    # cluster + heuristic cards + co-occurrence graph
+cat  demo_scroll/SKILL.md                          # a navigable Anthropic Agent-Skill card
+head demo_scroll/graph.cypher                      # a knowledge graph for Neo4j / Apache AGE
+```
+
+Real, inspectable artifacts, built fully offline. Sanity-check the test suites the same way (no
+infra): `PYTHONPATH=. python tests/test_smoke.py && PYTHONPATH=. python tests/test_emaki.py`.
+
+### 🚀 Full fleet — live web search + local LLMs
+
 ```bash
 # 1) install
-pip install -e ".[all]"          # or: pip install ashigaru-search[all]
+pip install -e ".[all]"          # or: pip install ashigaru-search[all]   (--embed also needs [emaki])
 
 # 2) start the search engine (self-hosted, no key) — see docker/SEARCH_SETUP.md
 #    for English / Chinese regional engine recipes (baidu, sogou, bing, …)
-cd docker && docker compose up -d searxng && cd ..
+docker compose -f docker/docker-compose.yml up -d searxng
 
 # 3) point at your local LLM fleet (a vLLM server). Example for LFM2.5-8B-A1B-NVFP4:
 #    vllm serve sakamakismile/LFM2.5-8B-A1B-NVFP4 --quantization modelopt \
@@ -134,7 +151,10 @@ a clustered topic tree of `SKILL.md` cards (a portable Anthropic Agent Skill), *
 with `--graph-llm`), exported as `graph.cypher` for **Neo4j or PostgreSQL + Apache AGE**.
 
 ```bash
-# build a scroll (zero-GPU TF-IDF clustering by default) — add a knowledge graph with --graph
+# build a scroll — zero infra (no model/network): heuristic cards + co-occurrence graph
+ashigaru-emaki ./my_corpus ./my_scroll --no-llm --graph
+
+# better cards: drop --no-llm so your local fleet distils each cluster (needs the worker LLM)
 ashigaru-emaki ./my_corpus ./my_scroll --graph
 
 # serve: scouts drill the tree (tree_overview → tree_open → get_document) and pivot the graph

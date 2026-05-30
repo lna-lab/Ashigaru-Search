@@ -1,5 +1,16 @@
 # Quickstart & recipes
 
+## 0a. Zero-infra taste (no model, no Docker, no network)
+The fastest way to see KURA-Emaki produce real output — builds a navigable scroll from the
+sample corpus in `examples/corpus/` and prints the artifacts:
+```bash
+pip install -e .
+bash examples/emaki_no_llm.sh
+```
+You get `examples/demo_scroll/SKILL.md` (a portable Anthropic Agent-Skill card) and
+`graph.cypher` (a knowledge graph for Neo4j / PostgreSQL + Apache AGE). Everything below needs
+the full fleet.
+
 ## 0. Prereqs
 - A running OpenAI-compatible LLM server (the Ashigaru fleet). Reference:
   ```bash
