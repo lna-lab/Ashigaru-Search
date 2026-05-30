@@ -124,6 +124,33 @@ Register it in your MCP client, e.g. Claude Code `settings.json`:
 
 Now your cloud agent can say *"research X"* and the **local Ashigaru fleet** does the legwork.
 
+## 🗺️ KURA-Emaki (蔵絵巻) — *don't retrieve, navigate*
+
+The second use-case: compile a bounded local corpus, **offline**, into a navigable **scroll**
+the scouts *walk* instead of retrieving top-*k* chunks. 「検索から探索へ」 — from search to
+exploration. The **蔵 (storehouse)** of documents becomes an **絵巻 (picture-scroll)** you unroll:
+a clustered topic tree of `SKILL.md` cards (a portable Anthropic Agent Skill), **plus** a
+**knowledge graph** the scouts pivot across (co-occurrence by default, fully **ontology-typed**
+with `--graph-llm`), exported as `graph.cypher` for **Neo4j or PostgreSQL + Apache AGE**.
+
+```bash
+# build a scroll (zero-GPU TF-IDF clustering by default) — add a knowledge graph with --graph
+ashigaru-emaki ./my_corpus ./my_scroll --graph
+
+# serve: scouts drill the tree (tree_overview → tree_open → get_document) and pivot the graph
+export ASHIGARU_EMAKI=./my_scroll
+ashigaru "How does NVFP4 differ from FP8 for MoE inference?"
+```
+
+A scout reads the bird's-eye card, **drills coarse→fine**, reads leaves in full, and
+**backtracks** from dead ends — the Commander's `continue/regroup/return` becomes
+`drill/backtrack/return-grounded`. Web/BM25 stays attached as a hybrid fallback.
+
+It's a **quality lever for hard, single-domain questions**, not a cheap default (navigation reads
+far more tokens than a BM25 hit). Full design, ontology attribution (Lna-Lab's
+[AIOS](https://github.com/Tonoken3/AIOS) / LNA-ES), trade-offs, and clean-room notes:
+**[docs/KURA-Emaki.md](docs/KURA-Emaki.md)**.
+
 ## Configuration
 
 All via env / `.env` (see `.env.example`). Highlights:
@@ -134,7 +161,8 @@ All via env / `.env` (see `.env.example`). Highlights:
 | `ASHIGARU_WORKER_MODEL` | `lfm25-8b-a1b` | scout model |
 | `ASHIGARU_ORCH_BASE_URL` / `_MODEL` | = worker | commander (pluggable; point at a bigger model if you like) |
 | `SEARXNG_URL` | `http://localhost:8888` | search backend |
-| `ASHIGARU_RAG_INDEX` | — | set to enable local doc tools |
+| `ASHIGARU_RAG_INDEX` | — | set to enable local BM25 doc tools |
+| `ASHIGARU_EMAKI` | — | set to a built KURA-Emaki scroll dir to enable tree+graph navigation |
 | `ASHIGARU_MAX_SUBQUESTIONS` | `6` | how many scouts to fan out |
 | `ASHIGARU_MAX_CONCURRENCY` | `16` | concurrent scouts in flight |
 | `ASHIGARU_WORKER_MAX_STEPS` | `6` | tool calls per scout |

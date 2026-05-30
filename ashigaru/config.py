@@ -31,6 +31,7 @@ class Config:
     # ---- search backends ----
     searxng_url: str = field(default_factory=lambda: os.getenv("SEARXNG_URL", "http://localhost:8888"))
     rag_index: str = field(default_factory=lambda: os.getenv("ASHIGARU_RAG_INDEX", ""))  # path to built index (.pkl)
+    emaki_tree: str = field(default_factory=lambda: os.getenv("ASHIGARU_EMAKI", ""))     # path to a built KURA-Emaki scroll dir
 
     # ---- behaviour knobs ----
     max_concurrency: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_MAX_CONCURRENCY", "16")))
@@ -64,3 +65,8 @@ class Config:
     @property
     def has_rag(self) -> bool:
         return bool(self.rag_index and os.path.exists(self.rag_index))
+
+    @property
+    def has_emaki(self) -> bool:
+        return bool(self.emaki_tree and os.path.isdir(self.emaki_tree)
+                    and os.path.exists(os.path.join(self.emaki_tree, "tree.json")))

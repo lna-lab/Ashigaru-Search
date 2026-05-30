@@ -1,0 +1,121 @@
+# Edge-type ontology — the relationship vocabulary of the KURA-Emaki knowledge graph.
+#
+# ADOPTED, with gratitude, from Lna-Lab's AIOS / LNA-ES v4.0 ontology system
+# (github.com/Tonoken3/AIOS, src/reading/ontology/edge_types.yaml) and generalised to a
+# domain-neutral subset. Ken's design principle, preserved verbatim:
+#
+#   "Write in a language future AI can read. Edge types carry meaning across millennia;
+#    node labels are time-bound. A CONTRASTS edge tells any future reader 'these are
+#    opposites' even if the node labels have drifted or become extinct."
+#
+# Each edge type is immutable (UPPER_SNAKE_CASE, English) and carries:
+#   name, inverse (reverse edge; == name if symmetric), weight_default (0..1),
+#   description (for human readers), ai_hint (geometric/structural hint, time-resistant).
+#
+# This file ships the domain-general Layer-1 (human_linguistic) relations used for
+# extraction. The full 3-layer ontology (ai_geometric / cross_modal) lives upstream in AIOS.
+
+lna_es_lineage: '4.0'
+layer: human_linguistic
+
+edge_types:
+  - name: CAUSES
+    inverse: CAUSED_BY
+    weight_default: 0.8
+    description: "A causes B (direct causation)"
+    ai_hint: "directed_acyclic, temporal_order(A<B)"
+  - name: CAUSED_BY
+    inverse: CAUSES
+    weight_default: 0.8
+    description: "A is caused by B"
+    ai_hint: "inverse_of(CAUSES)"
+  - name: REQUIRES
+    inverse: ENABLES
+    weight_default: 0.7
+    description: "A requires B to exist or function"
+    ai_hint: "dependency, A.existence -> B.existence"
+  - name: ENABLES
+    inverse: REQUIRES
+    weight_default: 0.7
+    description: "A enables B to exist or function"
+    ai_hint: "inverse_of(REQUIRES)"
+  - name: IMPLIES
+    inverse: IMPLIED_BY
+    weight_default: 0.6
+    description: "A logically implies B"
+    ai_hint: "conditional, P(B|A) > P(B)"
+  - name: IMPLIED_BY
+    inverse: IMPLIES
+    weight_default: 0.6
+    description: "A is logically implied by B"
+    ai_hint: "inverse_of(IMPLIES)"
+  - name: CONTRASTS
+    inverse: CONTRASTS
+    weight_default: 0.9
+    description: "A and B are opposing or contrasting concepts"
+    ai_hint: "symmetric, semantic_opposition"
+  - name: CONTRADICTS
+    inverse: CONTRADICTS
+    weight_default: 0.95
+    description: "A and B cannot both be true"
+    ai_hint: "symmetric, mutual_exclusion, P(A and B) ~ 0"
+  - name: TENSIONS_WITH
+    inverse: TENSIONS_WITH
+    weight_default: 0.7
+    description: "A and B exist in productive tension (not outright contradiction)"
+    ai_hint: "symmetric, neither aligned nor opposed"
+  - name: CONTAINS
+    inverse: PART_OF
+    weight_default: 0.8
+    description: "A contains B (whole-part)"
+    ai_hint: "hierarchical, A.scope superset B.scope"
+  - name: PART_OF
+    inverse: CONTAINS
+    weight_default: 0.8
+    description: "A is part of B"
+    ai_hint: "inverse_of(CONTAINS)"
+  - name: PARALLELS
+    inverse: PARALLELS
+    weight_default: 0.7
+    description: "A and B share structural similarity (parallelism)"
+    ai_hint: "symmetric, isomorphic_subgraph"
+  - name: TRANSFORMS_INTO
+    inverse: TRANSFORMS_FROM
+    weight_default: 0.8
+    description: "A becomes B over time or through a process"
+    ai_hint: "directed, temporal_order(A<B), partial_identity_preserved"
+  - name: TRANSFORMS_FROM
+    inverse: TRANSFORMS_INTO
+    weight_default: 0.8
+    description: "A was previously B"
+    ai_hint: "inverse_of(TRANSFORMS_INTO)"
+  - name: AFFIRMS
+    inverse: AFFIRMED_BY
+    weight_default: 0.7
+    description: "A affirms, supports or validates B"
+    ai_hint: "directed, reinforcement, P(B|A) increases"
+  - name: AFFIRMED_BY
+    inverse: AFFIRMS
+    weight_default: 0.7
+    description: "A is affirmed or supported by B"
+    ai_hint: "inverse_of(AFFIRMS)"
+  - name: PRECEDES
+    inverse: FOLLOWS
+    weight_default: 0.7
+    description: "A occurs before B in time"
+    ai_hint: "directed, strict_temporal_order"
+  - name: FOLLOWS
+    inverse: PRECEDES
+    weight_default: 0.7
+    description: "A occurs after B in time"
+    ai_hint: "inverse_of(PRECEDES)"
+  - name: RELATED_TO
+    inverse: RELATED_TO
+    weight_default: 0.4
+    description: "A and B are associated (generic relation when no sharper type fits)"
+    ai_hint: "symmetric, weak_association"
+  - name: CO_OCCURS
+    inverse: CO_OCCURS
+    weight_default: 0.5
+    description: "A and B occur together in the same document context"
+    ai_hint: "symmetric, same_context_window"

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ashigaru-search"
-version = "0.1.0"
+version = "0.2.0"
 description = "A fleet of small local LLMs (ashigaru = foot-soldiers) that fan out to search the web (SearXNG) and local docs, then synthesize a cited answer. Any OpenAI-compatible model can command or scout."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -27,6 +27,7 @@ dependencies = [
 mcp = ["mcp>=1.2"]
 extract = ["trafilatura>=1.8"]   # nicer main-text extraction for fetch_url
 pdf = ["pypdf>=4.0"]             # index .pdf in local RAG
+emaki = ["sentence-transformers>=2.2"]  # opt-in embedding backend for KURA-Emaki clustering
 all = ["mcp>=1.2", "trafilatura>=1.8", "pypdf>=4.0"]
 
 [project.urls]
@@ -36,7 +37,11 @@ Repository = "https://github.com/lna-lab/Ashigaru-Search"
 [project.scripts]
 ashigaru = "ashigaru.cli:main"
 ashigaru-index = "ashigaru.rag_index:main"
+ashigaru-emaki = "ashigaru.emaki.build:main"
 ashigaru-mcp = "ashigaru.mcp_server:main"
 
 [tool.setuptools]
-packages = ["ashigaru", "ashigaru.tools"]
+packages = ["ashigaru", "ashigaru.tools", "ashigaru.emaki"]
+
+[tool.setuptools.package-data]
+"ashigaru.emaki" = ["edge_types.yaml"]

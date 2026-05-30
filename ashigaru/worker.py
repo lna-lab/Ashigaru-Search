@@ -34,9 +34,13 @@ Protocol — follow EXACTLY:
   </final>
 
 Rules:
-- Start with web_search (and/or doc_search for local). Then fetch_url / read_chunk to actually READ the best sources before concluding.
-- Fetch at least one source before your <final>. Never invent URLs or facts.
+- {start_hint}
+- Read at least one source/document in full before your <final>. Never invent URLs, ids, or facts.
 - Be efficient: at most {max_steps} tool calls. If evidence is thin, say so in <final>."""
+
+# fallback when a toolbox doesn't carry a start_hint (e.g. a test double)
+_FALLBACK_START_HINT = ("Start with web_search (and/or doc_search for local), then fetch_url / "
+                        "read_chunk to READ the best sources before concluding.")
 
 SUPERVISOR_SYSTEM = """You are the Commander supervising a scout after each lead it reports. \
 The scout is a small model and may dig aimlessly — your job is to prevent wasted effort and \
@@ -86,7 +90,8 @@ async def run_ashigaru(llm: LLMClient, toolbox: ToolBox, task: str, cfg: Config,
                        index: int = 0, on_event=None, orch: LLMClient | None = None,
                        overall: str = "") -> WorkerResult:
     subq = task
-    sys_prompt = WORKER_SYSTEM.format(tools=toolbox.render_docs(), max_steps=cfg.worker_max_steps)
+    sys_prompt = WORKER_SYSTEM.format(tools=toolbox.render_docs(), max_steps=cfg.worker_max_steps,
+                                      start_hint=getattr(toolbox, "start_hint", _FALLBACK_START_HINT))
     messages = [
         {"role": "system", "content": sys_prompt},
         {"role": "user", "content": f"Sub-question to investigate:\n{task}\n\nBegin."},
@@ -127,6 +132,10 @@ async def run_ashigaru(llm: LLMClient, toolbox: ToolBox, task: str, cfg: Config,
             _note(str(act.args["url"]))
         if act.name == "read_chunk" and act.args.get("id"):
             _note(str(act.args["id"]))
+        if act.name == "get_document":            # KURA-Emaki leaf read -> credit the doc id
+            did = act.args.get("doc_id") or act.args.get("id")
+            if did:
+                _note(str(did))
         messages.append({"role": "assistant", "content": text})
         messages.append(tool_result_message(act.name or "tool", result))
 

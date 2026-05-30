@@ -8,6 +8,19 @@ from typing import Awaitable, Callable
 from .config import Config
 
 
+_WEB_START_HINT = ("Start with web_search (and/or doc_search for local). Then fetch_url / "
+                   "read_chunk to READ the best sources before concluding.")
+
+
+def _emaki_start_hint(has_graph: bool) -> str:
+    base = ("Start with tree_overview to see the corpus map, then tree_open(node_id) to drill "
+            "into the most relevant branch, and get_document(doc_id) to read a leaf in full. "
+            "Backtrack to a sibling branch if a path is unproductive.")
+    if has_graph:
+        base += (" Use graph_neighbors / graph_related_docs to pivot across related entities.")
+    return base + " Use web_search / doc_search only as a fallback."
+
+
 @dataclass
 class Tool:
     name: str
@@ -20,6 +33,7 @@ class ToolBox:
     def __init__(self, client: httpx.AsyncClient | None = None):
         self._tools: dict[str, Tool] = {}
         self._client = client
+        self.start_hint = _WEB_START_HINT       # how the worker should open its tool loop
 
     def add(self, tool: Tool):
         self._tools[tool.name] = tool
@@ -52,7 +66,8 @@ class ToolBox:
 
 
 def build_toolbox(cfg: Config) -> ToolBox:
-    """Assemble the toolbox: web tools always; local-RAG tools if an index is configured."""
+    """Assemble the toolbox: web tools always; local-RAG tools if a BM25 index is configured;
+    KURA-Emaki navigation tools if a built scroll is configured (and steer the scout to it)."""
     from .tools.web import make_web_tools
     from .tools.rag import make_rag_tools
 
@@ -64,4 +79,10 @@ def build_toolbox(cfg: Config) -> ToolBox:
     if cfg.has_rag:
         for t in make_rag_tools(cfg):
             box.add(t)
+    if cfg.has_emaki:
+        from .tools.emaki import make_emaki_tools
+        emaki_tools, has_graph = make_emaki_tools(cfg)
+        for t in emaki_tools:
+            box.add(t)
+        box.start_hint = _emaki_start_hint(has_graph)
     return box
