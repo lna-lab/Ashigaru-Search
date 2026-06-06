@@ -28,7 +28,10 @@ def _extract_text(html: str, limit: int) -> str:
         return re.sub(r"<[^>]+>", " ", html)[:limit]
 
 
-def make_web_tools(cfg: Config, client: httpx.AsyncClient) -> list[Tool]:
+def make_web_tools(cfg: Config, client: httpx.AsyncClient, sources=None) -> list[Tool]:
+    """Web tools. When `sources` (a SourceRegistry) is given, results are handed to the model
+    as stable `[Sn]` ids with NO raw URL (足軽ターボ) — the model fetches and cites by id and
+    the harness re-attaches verbatim URLs. With `sources=None` it falls back to printing URLs."""
     async def web_search(args: dict) -> str:
         query = str(args.get("query") or args.get("q") or "").strip()
         if not query:
@@ -52,28 +55,51 @@ def make_web_tools(cfg: Config, client: httpx.AsyncClient) -> list[Tool]:
             title = res.get("title", "").strip()
             url = res.get("url", "").strip()
             snippet = " ".join((res.get("content") or "").split())[:300]
-            out.append(f"[{i}] {title}\n    {url}\n    {snippet}")
+            if sources is not None:
+                ref = sources.register(url, title, snippet)
+                # show the stable id + title + domain — never the full path/query string
+                out.append(f"{sources.label(ref)}\n    {snippet}")
+            else:
+                out.append(f"[{i}] {title}\n    {url}\n    {snippet}")
+        if sources is not None:
+            out.append("(To read a source, call fetch_url with its id, e.g. {\"id\":\"S1\"}. "
+                        "Cite sources in your report by id, e.g. [S1] — do NOT write URLs.)")
         return "\n".join(out)
 
     async def fetch_url(args: dict) -> str:
+        # 足軽ターボ: prefer fetching by source id so the model never handles a raw URL
+        ref = str(args.get("id") or args.get("ref") or args.get("source") or "").strip()
         url = str(args.get("url") or "").strip()
+        shown = url
+        if sources is not None and ref:
+            resolved = sources.resolve(ref)
+            if not resolved:
+                return f"ERROR: unknown source id '{ref}'. Use an id from web_search results (e.g. S1)."
+            url, shown = resolved, sources.label(ref)
         if not url:
-            return "ERROR: fetch_url needs a 'url'."
+            hint = "fetch_url needs a source 'id' from web_search (e.g. {\"id\":\"S1\"})." if sources is not None \
+                   else "fetch_url needs a 'url'."
+            return f"ERROR: {hint}"
         r = await client.get(url)
         r.raise_for_status()
         ctype = r.headers.get("content-type", "")
         if "html" not in ctype and "text" not in ctype and "xml" not in ctype:
-            return f"(non-text content: {ctype}) {url}"
+            return f"(non-text content: {ctype}) {shown}"
         text = _extract_text(r.text, cfg.fetch_char_limit)
-        return f"Content of {url} (truncated to {cfg.fetch_char_limit} chars):\n{text}"
+        return f"Content of {shown} (truncated to {cfg.fetch_char_limit} chars):\n{text}"
+
+    if sources is not None:
+        search_desc = "Search the web via SearXNG. Returns ranked results as [S1] Title (domain) + snippet; cite/fetch them by id."
+        fetch_desc = "Read a search result's full text by its source id (from web_search). The system tracks the real URL."
+        fetch_usage = '<tool>{"name":"fetch_url","arguments":{"id":"S1"}}</tool>'
+    else:
+        search_desc = "Search the web via SearXNG. Returns ranked titles, URLs and snippets."
+        fetch_desc = "Fetch a URL and return its readable main text (use after web_search to read a source)."
+        fetch_usage = '<tool>{"name":"fetch_url","arguments":{"url":"https://..."}}</tool>'
 
     return [
-        Tool("web_search",
-             "Search the web via SearXNG. Returns ranked titles, URLs and snippets.",
+        Tool("web_search", search_desc,
              '<tool>{"name":"web_search","arguments":{"query":"...", "num":6}}</tool>',
              web_search),
-        Tool("fetch_url",
-             "Fetch a URL and return its readable main text (use after web_search to read a source).",
-             '<tool>{"name":"fetch_url","arguments":{"url":"https://..."}}</tool>',
-             fetch_url),
+        Tool("fetch_url", fetch_desc, fetch_usage, fetch_url),
     ]

@@ -16,6 +16,21 @@ from .registry import ToolBox
 from .toolproto import Action, parse_action, strip_think, tool_result_message
 
 _URL_RE = re.compile(r'https?://[^\s)\]<>"\']+')
+# a trailing model-written "Sources:" / "出典:" section (replaced by the harness-built map in turbo mode)
+_SRC_SECTION_RE = re.compile(r'\n\s*(?:Sources?|出典|参考(?:文献)?|参照)\s*[:：].*$',
+                             re.IGNORECASE | re.DOTALL)
+
+
+def _attach_sources(text: str, registry):
+    """足軽ターボ finalize: resolve the [Sn] ids the scout cited to VERBATIM URLs, replace its
+    (URL-less) Sources section with a deterministic harness-built one, and return
+    (rewritten_text, source_urls). The model never had to write a URL, so they can't be wrong."""
+    refs = registry.refs_in(text)
+    urls = registry.verbatim_sources(refs)
+    if refs:
+        body = _SRC_SECTION_RE.sub("", text).rstrip()
+        text = f"{body}\n\nSources:\n{registry.source_map(refs)}"
+    return text, urls
 
 WORKER_SYSTEM = """You are an Ashigaru, a focused research scout in a fleet. \
 Investigate ONE sub-question thoroughly with the tools, then report concise findings WITH sources.
@@ -30,13 +45,22 @@ Protocol — follow EXACTLY:
   <final>
   3-8 sentence findings, grounded ONLY in what the tools returned.
   Sources:
-  - <url or chunk id> — what it supports
+  {source_example}
   </final>
 
 Rules:
 - {start_hint}
-- Read at least one source/document in full before your <final>. Never invent URLs, ids, or facts.
+- {source_rule}
 - Be efficient: at most {max_steps} tool calls. If evidence is thin, say so in <final>."""
+
+# how sources are cited — turbo (stable [Sn] ids) vs legacy (raw URLs)
+_REF_SOURCE_EXAMPLE = "- [S1] — what it supports     (cite the source id; the harness fills in the URL)"
+_REF_SOURCE_RULE = ("Read at least one source in full (fetch_url by id) before your <final>. "
+                    "Cite each source by its [Sn] id only, e.g. [S1] — NEVER write a URL and never "
+                    "invent an id; the harness attaches the exact URLs for you.")
+_LEGACY_SOURCE_EXAMPLE = "- <url or chunk id> — what it supports"
+_LEGACY_SOURCE_RULE = ("Read at least one source/document in full before your <final>. "
+                       "Never invent URLs, ids, or facts.")
 
 # fallback when a toolbox doesn't carry a start_hint (e.g. a test double)
 _FALLBACK_START_HINT = ("Start with web_search (and/or doc_search for local), then fetch_url / "
@@ -90,8 +114,12 @@ async def run_ashigaru(llm: LLMClient, toolbox: ToolBox, task: str, cfg: Config,
                        index: int = 0, on_event=None, orch: LLMClient | None = None,
                        overall: str = "") -> WorkerResult:
     subq = task
-    sys_prompt = WORKER_SYSTEM.format(tools=toolbox.render_docs(), max_steps=cfg.worker_max_steps,
-                                      start_hint=getattr(toolbox, "start_hint", _FALLBACK_START_HINT))
+    registry = getattr(toolbox, "sources", None)      # 足軽ターボ SourceRegistry, or None (legacy)
+    sys_prompt = WORKER_SYSTEM.format(
+        tools=toolbox.render_docs(), max_steps=cfg.worker_max_steps,
+        start_hint=getattr(toolbox, "start_hint", _FALLBACK_START_HINT),
+        source_example=_REF_SOURCE_EXAMPLE if registry is not None else _LEGACY_SOURCE_EXAMPLE,
+        source_rule=_REF_SOURCE_RULE if registry is not None else _LEGACY_SOURCE_RULE)
     messages = [
         {"role": "system", "content": sys_prompt},
         {"role": "user", "content": f"Sub-question to investigate:\n{task}\n\nBegin."},
@@ -111,6 +139,22 @@ async def run_ashigaru(llm: LLMClient, toolbox: ToolBox, task: str, cfg: Config,
                     + "\n".join(f"- {n}" for n in notes) + "\n\n" + text)
         return text
 
+    # 足軽ターボ: a tiny scout often hallucinates a <final> instead of deciding to search. Seed the
+    # loop with ONE automatic search on the sub-question so the model always starts from real,
+    # registered ([Sn]) evidence — turning an unreliable agentic task into the grounded-summary
+    # task a small model is good at. (Skipped for test doubles without a real toolbox.)
+    if cfg.auto_first_search and hasattr(toolbox, "get"):
+        seed_tool = next((t for t in ("web_search", "doc_search") if toolbox.get(t)), None)
+        if seed_tool:
+            seed_args = {"query": task}
+            seed_res = await toolbox.run(seed_tool, seed_args)
+            if on_event:
+                on_event("worker_tool", {"index": index, "step": 0, "tool": seed_tool,
+                                         "args": seed_args, "auto": True})
+            messages.append({"role": "assistant",
+                             "content": f"<tool>{json.dumps({'name': seed_tool, 'arguments': seed_args})}</tool>"})
+            messages.append(tool_result_message(seed_tool, seed_res))
+
     last_text = ""
     for step in range(1, cfg.worker_max_steps + 1):
         text = await llm.chat(messages, temperature=cfg.temperature, max_tokens=2048)
@@ -118,18 +162,27 @@ async def run_ashigaru(llm: LLMClient, toolbox: ToolBox, task: str, cfg: Config,
         act: Action = parse_action(text)
 
         if act.kind == "final":
-            for u in _URL_RE.findall(act.text):     # also credit sources cited in the report
-                _note(u.rstrip(".,);"))
+            findings = act.text
+            if registry is not None:                # turbo: resolve [Sn] -> verbatim URLs
+                findings, ref_urls = _attach_sources(findings, registry)
+                for u in ref_urls:
+                    _note(u)
+            else:
+                for u in _URL_RE.findall(findings):  # legacy: credit URLs the model wrote
+                    _note(u.rstrip(".,);"))
             if on_event:
                 on_event("worker_done", {"index": index, "steps": step})
-            return WorkerResult(index, subq, _finalize(act.text), sources, step, ok=True)
+            return WorkerResult(index, subq, _finalize(findings), sources, step, ok=True)
 
         # tool call
         if on_event:
             on_event("worker_tool", {"index": index, "step": step, "tool": act.name, "args": act.args})
         result = await toolbox.run(act.name, act.args)
-        if act.name == "fetch_url" and act.args.get("url"):
-            _note(str(act.args["url"]))
+        if act.name == "fetch_url":
+            if registry is not None and (act.args.get("id") or act.args.get("ref") or act.args.get("source")):
+                _note(registry.resolve(act.args.get("id") or act.args.get("ref") or act.args.get("source")) or "")
+            elif act.args.get("url"):
+                _note(str(act.args["url"]))
         if act.name == "read_chunk" and act.args.get("id"):
             _note(str(act.args["id"]))
         if act.name == "get_document":            # KURA-Emaki leaf read -> credit the doc id
@@ -165,8 +218,13 @@ async def run_ashigaru(llm: LLMClient, toolbox: ToolBox, task: str, cfg: Config,
     text = await llm.chat(messages, temperature=cfg.temperature, max_tokens=2048)
     act = parse_action(text)
     findings = act.text.strip() if act.kind == "final" else (act.text or last_text).strip()
-    for u in _URL_RE.findall(findings):
-        _note(u.rstrip(".,);"))
+    if registry is not None:
+        findings, ref_urls = _attach_sources(findings, registry)
+        for u in ref_urls:
+            _note(u)
+    else:
+        for u in _URL_RE.findall(findings):
+            _note(u.rstrip(".,);"))
     recalled = step < cfg.worker_max_steps      # came home early on a 'return' order
     if on_event:
         on_event("worker_done", {"index": index, "steps": step, "forced": not recalled,

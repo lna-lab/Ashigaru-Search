@@ -187,6 +187,11 @@ All via env / `.env` (see `.env.example`). Highlights:
 | `ASHIGARU_MAX_CONCURRENCY` | `16` | concurrent scouts in flight |
 | `ASHIGARU_WORKER_MAX_STEPS` | `6` | tool calls per scout |
 
+**Serving the fleet** (which NVFP4 models, exact vLLM flags, GPU/TP layout, per-model
+throughput, the 大将-brain comparison, and a two-node TP=4-scouts + TP=8-commander split):
+**[docs/FLEET-RECIPE.md](docs/FLEET-RECIPE.md)**. TL;DR — a sparse-MoE commander
+(Qwen3.6-35B-A3B, 3B active) is *bigger but 2× faster* than a 27B and gives the best answers.
+
 ## How a scout thinks
 
 Each Ashigaru scout follows a tiny, model-agnostic protocol:

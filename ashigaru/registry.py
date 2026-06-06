@@ -30,10 +30,11 @@ class Tool:
 
 
 class ToolBox:
-    def __init__(self, client: httpx.AsyncClient | None = None):
+    def __init__(self, client: httpx.AsyncClient | None = None, sources=None):
         self._tools: dict[str, Tool] = {}
         self._client = client
         self.start_hint = _WEB_START_HINT       # how the worker should open its tool loop
+        self.sources = sources                  # shared SourceRegistry (足軽ターボ); None = legacy URLs
 
     def add(self, tool: Tool):
         self._tools[tool.name] = tool
@@ -70,11 +71,14 @@ def build_toolbox(cfg: Config) -> ToolBox:
     KURA-Emaki navigation tools if a built scroll is configured (and steer the scout to it)."""
     from .tools.web import make_web_tools
     from .tools.rag import make_rag_tools
+    from .sources import SourceRegistry
 
     client = httpx.AsyncClient(timeout=cfg.request_timeout, follow_redirects=True,
                                headers={"User-Agent": "Ashigaru-Search/0.1 (+https://github.com/lna-lab/Ashigaru-Search)"})
-    box = ToolBox(client)
-    for t in make_web_tools(cfg, client):
+    # one shared registry per run -> globally-unique [Sn] ids across the whole fleet
+    sources = SourceRegistry() if cfg.ref_id_sources else None
+    box = ToolBox(client, sources=sources)
+    for t in make_web_tools(cfg, client, sources):
         box.add(t)
     if cfg.has_rag:
         for t in make_rag_tools(cfg):
