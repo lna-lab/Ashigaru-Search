@@ -51,6 +51,12 @@ class Config:
     supervise_after: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_SUPERVISE_AFTER", "1")))
     max_checkins: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_MAX_CHECKINS", "5")))
     search_results: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_SEARCH_RESULTS", "6")))
+    # 足軽ターボ: hand the scout stable [Sn] source ids instead of raw URLs, and re-attach the
+    # verbatim URLs in the harness. Stops a small model from corrupting/dropping long URLs.
+    ref_id_sources: bool = field(default_factory=lambda: _b("ASHIGARU_REF_ID_SOURCES", True))
+    # 足軽ターボ: seed the scout's loop with an automatic first search on the sub-question, instead
+    # of trusting a small model to decide to search (tiny models often hallucinate a final instead).
+    auto_first_search: bool = field(default_factory=lambda: _b("ASHIGARU_AUTO_FIRST_SEARCH", True))
     fetch_char_limit: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_FETCH_CHAR_LIMIT", "6000")))
     temperature: float = field(default_factory=lambda: float(os.getenv("ASHIGARU_TEMPERATURE", "0.2")))
     request_timeout: float = field(default_factory=lambda: float(os.getenv("ASHIGARU_REQUEST_TIMEOUT", "120")))
