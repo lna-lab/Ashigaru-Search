@@ -80,6 +80,10 @@ def build_toolbox(cfg: Config) -> ToolBox:
     box = ToolBox(client, sources=sources)
     for t in make_web_tools(cfg, client, sources):
         box.add(t)
+    if cfg.x_search_enabled:
+        from .tools.x_search import make_x_search_tools
+        for t in make_x_search_tools(cfg, client, sources):
+            box.add(t)
     if cfg.has_rag:
         for t in make_rag_tools(cfg):
             box.add(t)

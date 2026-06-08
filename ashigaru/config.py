@@ -58,6 +58,34 @@ class Config:
     # of trusting a small model to decide to search (tiny models often hallucinate a final instead).
     auto_first_search: bool = field(default_factory=lambda: _b("ASHIGARU_AUTO_FIRST_SEARCH", True))
     fetch_char_limit: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_FETCH_CHAR_LIMIT", "6000")))
+    # ---- X/Twitter & JS-walled reading via a reader proxy (renders JS the httpx fetch can't) ----
+    # OFF by default. When on, x.com/twitter.com URLs are GET-prefixed through reader_base_url so
+    # fetch_url gets rendered text instead of a login wall. DEFAULTS TO A LOCAL reader for sovereignty
+    # (nothing leaves the box): run `docker run --rm -p 3000:8081 ghcr.io/jina-ai/reader:oss`.
+    # Set ASHIGARU_READER_BASE_URL=https://r.jina.ai to opt INTO the remote service (the URL leaves the box).
+    reader_enabled: bool = field(default_factory=lambda: _b("ASHIGARU_READER", False))
+    reader_base_url: str = field(default_factory=lambda: os.getenv("ASHIGARU_READER_BASE_URL", "http://localhost:3000"))
+    # comma-separated host substrings routed through the reader (only used when reader_all_js is False)
+    reader_hosts: str = field(default_factory=lambda: os.getenv("ASHIGARU_READER_HOSTS", "x.com,twitter.com"))
+    # route EVERY fetch through the reader (any JS-walled page), not just the host list above
+    reader_all_js: bool = field(default_factory=lambda: _b("ASHIGARU_READER_ALL_JS", False))
+    # optional bearer key (only meaningful for remote r.jina.ai: no-key=20 RPM, key=100/500 RPM)
+    reader_api_key: str = field(default_factory=lambda: os.getenv("ASHIGARU_READER_API_KEY", ""))
+
+    # ---- X/Twitter SEARCH as a POLITE HUMAN PROXY ("never get scolded, never be a nuisance") ----
+    # OFF by default. When on, adds an `x_search` tool. X is just ONE source (web + 蔵 + X), used
+    # occasionally. The GOVERNOR below keeps the fleet to a courteous human's scope & cadence so we stay
+    # FAR under X's limits — we'd rather miss a result than knock too hard. Backend = twscrape (add ONE
+    # warmed SECONDARY account to its pool; never your main).
+    x_search_enabled: bool = field(default_factory=lambda: _b("ASHIGARU_X_SEARCH", False))
+    x_backend: str = field(default_factory=lambda: os.getenv("ASHIGARU_X_BACKEND", "twscrape"))  # twscrape | (future) nitter | computeruse
+    x_pool_db: str = field(default_factory=lambda: os.getenv("ASHIGARU_X_POOL_DB", ""))           # twscrape accounts.db path ("" = twscrape default)
+    x_search_mode: str = field(default_factory=lambda: os.getenv("ASHIGARU_X_SEARCH_MODE", "Latest"))  # Latest | Top
+    # --- the politeness governor (the whole point: behave like a courteous human, never a nuisance) ---
+    x_max_results: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_X_MAX_RESULTS", "15")))          # ~one human screenful; NO deep paging
+    x_min_interval_s: float = field(default_factory=lambda: float(os.getenv("ASHIGARU_X_MIN_INTERVAL_S", "12")))  # min gap between searches
+    x_jitter_s: float = field(default_factory=lambda: float(os.getenv("ASHIGARU_X_JITTER_S", "6")))             # +0..jitter random, so cadence looks human
+    x_max_per_hour: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_X_MAX_PER_HOUR", "20")))        # hard hourly courtesy ceiling
     temperature: float = field(default_factory=lambda: float(os.getenv("ASHIGARU_TEMPERATURE", "0.2")))
     request_timeout: float = field(default_factory=lambda: float(os.getenv("ASHIGARU_REQUEST_TIMEOUT", "120")))
     verbose: bool = field(default_factory=lambda: _b("ASHIGARU_VERBOSE", True))

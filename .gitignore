@@ -16,3 +16,19 @@ docker/searxng/settings.yml.local
 *_scroll/
 *.emaki/
 examples/demo_scroll/
+
+# --- runtime secrets / credentials — NEVER commit (sovereignty floor) ---
+.env.*
+*.key
+*.pem
+secrets/
+# twscrape account pool (auth_token + ct0 cookies live here)
+accounts.db
+twscrape.db
+*.sqlite
+*.sqlite3
+# warmed browser profiles / live session cookies (the DESK / reader)
+*chrome*profile*/
+google-chrome-*/
+*cookies*
+*.cookies

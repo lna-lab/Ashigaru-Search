@@ -28,6 +28,25 @@ def _extract_text(html: str, limit: int) -> str:
         return re.sub(r"<[^>]+>", " ", html)[:limit]
 
 
+def _reader_url(cfg: Config, url: str) -> str | None:
+    """If `url` should be read through the reader proxy, return the prefixed reader URL, else None.
+    The reader renders JS (e.g. x.com) that the plain httpx fetch can't get past a login wall.
+    Sovereign by default: reader_base_url points at a self-hosted reader (nothing leaves the box)."""
+    if not getattr(cfg, "reader_enabled", False) or not cfg.reader_base_url:
+        return None
+    if not cfg.reader_all_js:
+        hosts = [h.strip().lower() for h in (cfg.reader_hosts or "").split(",") if h.strip()]
+        try:
+            from urllib.parse import urlsplit
+            host = (urlsplit(url).hostname or "").lower()
+        except Exception:
+            host = url.lower()
+        if not any(host == h or host.endswith("." + h) for h in hosts):
+            return None
+    # r.jina.ai / jina reader:oss contract: GET {base}/{full-url}
+    return f"{cfg.reader_base_url.rstrip('/')}/{url}"
+
+
 def make_web_tools(cfg: Config, client: httpx.AsyncClient, sources=None) -> list[Tool]:
     """Web tools. When `sources` (a SourceRegistry) is given, results are handed to the model
     as stable `[Sn]` ids with NO raw URL (足軽ターボ) — the model fetches and cites by id and
@@ -80,6 +99,17 @@ def make_web_tools(cfg: Config, client: httpx.AsyncClient, sources=None) -> list
             hint = "fetch_url needs a source 'id' from web_search (e.g. {\"id\":\"S1\"})." if sources is not None \
                    else "fetch_url needs a 'url'."
             return f"ERROR: {hint}"
+        reader = _reader_url(cfg, url)
+        if reader is not None:
+            headers = {}
+            if cfg.reader_api_key:
+                headers["Authorization"] = f"Bearer {cfg.reader_api_key}"
+            r = await client.get(reader, headers=headers)
+            r.raise_for_status()
+            # the reader returns clean markdown/text already — pass through _extract_text
+            # (trafilatura is a no-op on plain text, so it just truncates to the limit)
+            text = _extract_text(r.text, cfg.fetch_char_limit)
+            return f"Content of {shown} (via reader, truncated to {cfg.fetch_char_limit} chars):\n{text}"
         r = await client.get(url)
         r.raise_for_status()
         ctype = r.headers.get("content-type", "")
