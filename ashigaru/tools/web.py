@@ -1,6 +1,8 @@
 """Web tools: web_search (self-hosted SearXNG JSON API) + fetch_url (readable text)."""
 from __future__ import annotations
+import asyncio
 import httpx
+import time
 
 from ..config import Config
 from ..egress import EgressDenied
@@ -77,6 +79,22 @@ def make_web_tools(cfg: Config, client: httpx.AsyncClient, sources=None, gate=No
     When `gate` (an EgressGate) is given, every outbound request is policy-checked first:
     web_search may reach the (loopback/allow-listed) SearXNG; fetch_url may reach only a host a
     prior search surfaced, never the box's own loopback/LAN/metadata services."""
+    # Shared SearXNG throttle: all of the fleet's concurrent scouts call this same web_search
+    # closure, so one lock + last-call clock spaces every SearXNG GET >= cfg.searxng_min_interval_s
+    # apart — the upstream engines see human-paced traffic instead of a burst that earns a CAPTCHA.
+    _min_interval = max(0.0, float(cfg.searxng_min_interval_s))
+    _throttle_lock = asyncio.Lock()
+    _last_call = {"t": 0.0}
+
+    async def _throttle() -> None:
+        if _min_interval <= 0.0:
+            return
+        async with _throttle_lock:  # held across the sleep so calls take ordered, spaced slots
+            wait = _min_interval - (time.monotonic() - _last_call["t"])
+            if wait > 0.0:
+                await asyncio.sleep(wait)
+            _last_call["t"] = time.monotonic()
+
     async def web_search(args: dict) -> str:
         query = str(args.get("query") or args.get("q") or "").strip()
         if not query:
@@ -92,6 +110,7 @@ def make_web_tools(cfg: Config, client: httpx.AsyncClient, sources=None, gate=No
         try:
             if gate is not None:
                 gate.check(cfg.searxng_url, mode="search")
+            await _throttle()  # human-pace the fleet's SearXNG calls (anti-CAPTCHA)
             r = await client.get(f"{cfg.searxng_url.rstrip('/')}/search", params=params)
             r.raise_for_status()
         except EgressDenied as e:

@@ -32,6 +32,10 @@ class Config:
     searxng_url: str = field(default_factory=lambda: os.getenv("SEARXNG_URL", "http://localhost:8888"))
     rag_index: str = field(default_factory=lambda: os.getenv("ASHIGARU_RAG_INDEX", ""))  # path to built index (.pkl)
     emaki_tree: str = field(default_factory=lambda: os.getenv("ASHIGARU_EMAKI", ""))     # path to a built KURA-Emaki scroll dir
+    # min seconds between SearXNG calls across the WHOLE fleet (a shared throttle). The public
+    # engines SearXNG scrapes CAPTCHA a bursting IP, so spacing the concurrent scouts' searches
+    # keeps outbound traffic human-paced (e.g. 0.2 ⇒ ~5 req/s ⇒ 60 searches over 12 s). 0 = off.
+    searxng_min_interval_s: float = field(default_factory=lambda: float(os.getenv("ASHIGARU_SEARXNG_MIN_INTERVAL_S", "0")))
 
     # ---- behaviour knobs ----
     max_concurrency: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_MAX_CONCURRENCY", "16")))
