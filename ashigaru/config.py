@@ -43,6 +43,9 @@ class Config:
     embed_url: str = field(default_factory=lambda: os.getenv("ASHIGARU_EMBED_URL", ""))
     embed_model: str = field(default_factory=lambda: os.getenv("ASHIGARU_EMBED_MODEL", ""))
     embed_query_instruct: str = field(default_factory=lambda: os.getenv("ASHIGARU_EMBED_QUERY_INSTRUCT", ""))
+    # Gate Guard: quarantine web ingestion (regex, no LLM) — drop prompt-injection / fabricated /
+    # spam content before a scout reads it or it enters memory. A shield, not a chain. "0" = off.
+    ingest_guard: bool = field(default_factory=lambda: _b("ASHIGARU_INGEST_GUARD", True))
 
     # ---- behaviour knobs ----
     max_concurrency: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_MAX_CONCURRENCY", "16")))

@@ -59,7 +59,9 @@ class ToolBox:
         try:
             return await tool.run(args or {})
         except Exception as e:  # never let a tool crash the worker loop
-            return f"ERROR running {name}: {type(e).__name__}: {e}"
+            from .failures import classify
+            fc = classify(e, source=name)   # tag the failure class so the scout can adapt
+            return f"ERROR running {name} [{fc.cls.value}]: {type(e).__name__}: {e}"
 
     async def aclose(self):
         if self._client is not None:

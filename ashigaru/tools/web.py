@@ -12,6 +12,19 @@ from ..registry import Tool
 _TIME_RANGES = {"day", "week", "month", "year"}
 
 
+def _guard_blocked(cfg, text: str, url: str, shown: str) -> str | None:
+    """Gate Guard on fetched content: returns a blocked-message if REJECT, else None (let it pass).
+    Stops a scout from ever reading prompt-injection / fabricated content into its reasoning."""
+    if not getattr(cfg, "ingest_guard", False):
+        return None
+    from ..guard import Verdict, inspect_content
+
+    ins = inspect_content(text, source_url=url)
+    if ins.verdict == Verdict.REJECT:
+        return f"BLOCKED by gate guard — contaminated content (flags={ins.flags}): {shown}"
+    return None
+
+
 async def _gated_fetch(client: httpx.AsyncClient, gate, url: str, discovered, max_hops: int = 5):
     """GET `url`, following redirects MANUALLY so each hop is gated: a redirect may cross to
     another public host (www / CDN) but never to a loopback/private host (SSRF). The initial
@@ -120,6 +133,9 @@ def make_web_tools(cfg: Config, client: httpx.AsyncClient, sources=None, gate=No
                     f"Is it running?  Start it with: "
                     f"docker compose -f docker/docker-compose.yml up -d searxng")
         results = r.json().get("results", [])[:n]
+        if cfg.ingest_guard:  # Gate Guard: drop contaminated results before a scout reads them
+            from ..guard import inspect_search_results
+            results = inspect_search_results(results)
         if not results:
             return f"No results for: {query}"
         out = [f"Search results for: {query}"]
@@ -127,12 +143,14 @@ def make_web_tools(cfg: Config, client: httpx.AsyncClient, sources=None, gate=No
             title = res.get("title", "").strip()
             url = res.get("url", "").strip()
             snippet = " ".join((res.get("content") or "").split())[:300]
+            ins = res.get("_inspection") or {}
+            flag = f"  ⚠flagged({','.join(ins.get('flags', []))})" if ins.get("verdict") == "flag" else ""
             if sources is not None:
                 ref = sources.register(url, title, snippet)
                 # show the stable id + title + domain — never the full path/query string
-                out.append(f"{sources.label(ref)}\n    {snippet}")
+                out.append(f"{sources.label(ref)}{flag}\n    {snippet}")
             else:
-                out.append(f"[{i}] {title}\n    {url}\n    {snippet}")
+                out.append(f"[{i}] {title}{flag}\n    {url}\n    {snippet}")
         if sources is not None:
             out.append("(To read a source, call fetch_url with its id, e.g. {\"id\":\"S1\"}. "
                         "Cite sources in your report by id, e.g. [S1] — do NOT write URLs.)")
@@ -168,7 +186,8 @@ def make_web_tools(cfg: Config, client: httpx.AsyncClient, sources=None, gate=No
                 # the reader returns clean markdown/text already — pass through _extract_text
                 # (trafilatura is a no-op on plain text, so it just truncates to the limit)
                 text = _extract_text(r.text, cfg.fetch_char_limit)
-                return f"Content of {shown} (via reader, truncated to {cfg.fetch_char_limit} chars):\n{text}"
+                return _guard_blocked(cfg, text, url, shown) or \
+                    f"Content of {shown} (via reader, truncated to {cfg.fetch_char_limit} chars):\n{text}"
             if gate is not None:
                 r = await _gated_fetch(client, gate, url, discovered)  # gate each redirect hop
             else:
@@ -182,7 +201,8 @@ def make_web_tools(cfg: Config, client: httpx.AsyncClient, sources=None, gate=No
         if "html" not in ctype and "text" not in ctype and "xml" not in ctype:
             return f"(non-text content: {ctype}) {shown}"
         text = _extract_text(r.text, cfg.fetch_char_limit)
-        return f"Content of {shown} (truncated to {cfg.fetch_char_limit} chars):\n{text}"
+        return _guard_blocked(cfg, text, url, shown) or \
+            f"Content of {shown} (truncated to {cfg.fetch_char_limit} chars):\n{text}"
 
     _recency = ' Add "time_range":"day"|"week"|"month"|"year" to restrict to recent results.'
     if sources is not None:
