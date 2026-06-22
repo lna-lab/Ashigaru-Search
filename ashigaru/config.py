@@ -40,7 +40,7 @@ class Config:
     fleet_size: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_FLEET_SIZE", "10")))
     worker_max_steps: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_WORKER_MAX_STEPS", "6")))
     # quality gate: if a run's reports are thin, the Commander ESCALATES density and
-    # re-runs (S->M->L; a numeric count -> ×3, capped at 12).
+    # re-runs (S->M->L; a numeric count -> ×2, capped at 12).
     escalate: bool = field(default_factory=lambda: _b("ASHIGARU_ESCALATE", True))
     max_escalations: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_MAX_ESCALATIONS", "2")))
     quality_min_chars: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_QUALITY_MIN_CHARS", "160")))
@@ -88,6 +88,10 @@ class Config:
     x_max_per_hour: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_X_MAX_PER_HOUR", "20")))        # hard hourly courtesy ceiling
     temperature: float = field(default_factory=lambda: float(os.getenv("ASHIGARU_TEMPERATURE", "0.2")))
     request_timeout: float = field(default_factory=lambda: float(os.getenv("ASHIGARU_REQUEST_TIMEOUT", "120")))
+    # Token budget for the Commander's own generations (plan / judge / synthesize).
+    # Reasoning models burn tokens on <think> before emitting content — give headroom.
+    # 16384 comfortably covers synthesis of 9 rich scout reports + reasoning overhead.
+    orch_max_tokens: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_ORCH_MAX_TOKENS", "16384")))
     verbose: bool = field(default_factory=lambda: _b("ASHIGARU_VERBOSE", True))
 
     def __post_init__(self):

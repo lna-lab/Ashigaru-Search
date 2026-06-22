@@ -7,8 +7,11 @@ NVFP4 model, or any OpenAI-compatible endpoint."""
 from __future__ import annotations
 import asyncio
 import json
+import os
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .config import Config
 from .llm import LLMClient
@@ -23,6 +26,23 @@ _ARR_RE = re.compile(r"\[.*\]", re.DOTALL)
 _NUM_RE = re.compile(r"^\s*(\d{1,2})[ 　]+(\S.*)$", re.DOTALL)
 _SML_RE = re.compile(r"^\s*([SMLsml])[ 　]+(\S.*)$", re.DOTALL)
 _SML_FRAC = {"s": 0.10, "m": 0.50, "l": 1.00}    # 1割 / 5割 / 10割 of the fleet
+
+
+def _current_datetime_context() -> str:
+    """A concise 'now' line appended to Commander prompts. Local NVFP4 models have a stale
+    training cutoff — telling them today's date lets them phrase 'latest/current' sub-questions
+    in the right year and judge whether sources are stale. Defaults to Asia/Tokyo; ``TZ`` env
+    overrides."""
+    tz_name = os.environ.get("TZ", "Asia/Tokyo")
+    try:
+        tz = ZoneInfo(tz_name)
+    except (ZoneInfoNotFoundError, ValueError):
+        tz, tz_name = ZoneInfo("Asia/Tokyo"), "Asia/Tokyo"
+    now = datetime.now(tz)
+    utc_now = datetime.now(ZoneInfo("UTC"))
+    return (f"Today's date/time: {now.strftime('%Y-%m-%d %H:%M:%S')} ({tz_name}); "
+            f"UTC: {utc_now.strftime('%Y-%m-%d %H:%M:%S')}.")
+
 
 PLAN_SYSTEM = """You are the Commander of a research fleet. Break the user's question \
 {constraint} SHARP, non-overlapping sub-questions that, once answered with web/local \
@@ -51,9 +71,9 @@ def parse_scout_count(question: str, default: int, fleet_size: int = 10) -> tupl
 
 
 def _escalate(kind: str, count: int, cfg: Config) -> tuple[str, int] | None:
-    """Next density tier on a thin run. S→M→L; numeric/default → ×3 (cap 12). None = capped."""
+    """Next density tier on a thin run. S→M→L; numeric/default → ×2 (cap 12). None = capped."""
     if kind in ("num", "default"):
-        nc = min(12, count * 3)
+        nc = min(12, count * 2)
         return ("num", nc) if nc > count else None
     ladder = sorted({_tier_count("s", cfg.fleet_size),
                      _tier_count("m", cfg.fleet_size),
@@ -95,12 +115,13 @@ async def _plan(orch: LLMClient, question: str, cfg: Config, exact: bool = False
     n = cfg.max_subquestions
     constraint = f"into EXACTLY {n}" if exact else f"into {n} or fewer"
     msgs = [
-        {"role": "system", "content": PLAN_SYSTEM.format(constraint=constraint)},
+        {"role": "system", "content": PLAN_SYSTEM.format(constraint=constraint)
+            + "\n\n" + _current_datetime_context()},
         {"role": "user", "content": question},
     ]
     # reasoning models (e.g. LFM2.5) think at length before the array — give room so
     # the JSON actually gets emitted after </think> (else we fall back to 1 scout)
-    text = strip_think(await orch.chat(msgs, temperature=cfg.temperature, max_tokens=3072))
+    text = strip_think(await orch.chat(msgs, temperature=cfg.temperature, max_tokens=cfg.orch_max_tokens))
     m = _ARR_RE.search(text)
     if m:
         try:
@@ -119,8 +140,9 @@ async def _synthesize(orch: LLMClient, question: str, workers: list[WorkerResult
         src = "\n".join(f"    - {s}" for s in w.sources) or "    (none cited)"
         blocks.append(f"### Scout {w.index + 1}: {w.task}\n{w.findings}\nSources:\n{src}")
     user = f"ORIGINAL QUESTION:\n{question}\n\nSCOUT FINDINGS:\n" + "\n\n".join(blocks)
-    msgs = [{"role": "system", "content": SYNTH_SYSTEM}, {"role": "user", "content": user}]
-    return strip_think(await orch.chat(msgs, temperature=cfg.temperature, max_tokens=3072))
+    msgs = [{"role": "system", "content": SYNTH_SYSTEM + "\n\n" + _current_datetime_context()},
+            {"role": "user", "content": user}]
+    return strip_think(await orch.chat(msgs, temperature=cfg.temperature, max_tokens=cfg.orch_max_tokens))
 
 
 def _heuristic_ok(w: WorkerResult, cfg: Config) -> tuple[bool, str]:
@@ -138,11 +160,11 @@ def _heuristic_ok(w: WorkerResult, cfg: Config) -> tuple[bool, str]:
 async def _judge(orch: LLMClient, subq: str, w: WorkerResult, cfg: Config) -> tuple[bool, str]:
     """Commander judges whether the report actually answers the sub-question."""
     msgs = [
-        {"role": "system", "content": JUDGE_SYSTEM},
+        {"role": "system", "content": JUDGE_SYSTEM + "\n\n" + _current_datetime_context()},
         {"role": "user", "content": f"Sub-question: {subq}\n\nScout report:\n{w.findings}\n\n"
                                      f"Cited sources: {w.sources or '(none)'}"},
     ]
-    txt = strip_think(await orch.chat(msgs, temperature=0.0, max_tokens=1536))
+    txt = strip_think(await orch.chat(msgs, temperature=0.0, max_tokens=cfg.orch_max_tokens // 2))
     m = re.search(r"\{.*\}", txt, re.DOTALL)
     if not m:
         return True, ""                       # judge unsure -> don't block

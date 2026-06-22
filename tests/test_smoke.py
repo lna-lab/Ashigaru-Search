@@ -59,10 +59,11 @@ def test_escalate():
         (("s", 1), ("m", 5)),     # S(1) -> M(5)
         (("m", 5), ("l", 10)),    # M(5) -> L(10)
         (("l", 10), None),        # L capped
-        (("num", 1), ("num", 3)), # numeric ×3
-        (("num", 5), ("num", 12)),# 15 -> cap 12
+        (("num", 1), ("num", 2)), # numeric ×2
+        (("num", 5), ("num", 10)),# 5 -> 10
+        (("num", 6), ("num", 12)),# 12 (cap)
         (("num", 12), None),      # already capped
-        (("default", 6), ("num", 12)),  # 18 -> cap 12
+        (("default", 6), ("num", 12)),  # 12 (cap)
     ]
     for (args, exp) in cases:
         got = _escalate(args[0], args[1], c)
