@@ -134,6 +134,11 @@ class Config:
     # so synthesis fuses prior knowledge with the fresh web findings. No-op when the toolbox
     # carries no local tool (doc_search / emaki). Speed-neutral (uses the otherwise-idle 27B).
     recall_commander: bool = field(default_factory=lambda: _b("ASHIGARU_RECALL_COMMANDER", False))
+    # 住所→派遣: when recall is on, find the precise 蔵 addresses (semantic doc_search) and dispatch
+    # one 足軽 PER address to deep-read it in PARALLEL, instead of one Commander reading serially.
+    # Measured faster + broader (and compounds with bigger models). Needs doc_search; no-op without.
+    recall_dispatch: bool = field(default_factory=lambda: _b("ASHIGARU_RECALL_DISPATCH", False))
+    recall_dispatch_k: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_RECALL_DISPATCH_K", "4")))
     verbose: bool = field(default_factory=lambda: _b("ASHIGARU_VERBOSE", True))
 
     def __post_init__(self):

@@ -276,8 +276,37 @@ async def build_graph(chunks: list[dict], nodes: dict[str, Node], out_dir: str, 
 # ---------------------------------------------------------------------------
 # serve-time loader
 # ---------------------------------------------------------------------------
+def _embed_query_sync(embed_url: str, embed_model: str, text: str) -> list[float] | None:
+    """Embed one string via an OpenAI /v1/embeddings endpoint (sync; for node resolution).
+    Returns ``None`` on any failure so resolution falls back to lexical matching."""
+    import json
+    import urllib.request
+
+    try:
+        payload = json.dumps({"model": embed_model or "embed", "input": [text]}).encode()
+        req = urllib.request.Request(
+            embed_url.rstrip("/") + "/v1/embeddings", data=payload,
+            headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return json.load(r)["data"][0]["embedding"]
+    except Exception:
+        return None
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    import math
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a)) or 1.0
+    nb = math.sqrt(sum(y * y for y in b)) or 1.0
+    return dot / (na * nb)
+
+
 class KnowledgeGraph:
-    def __init__(self, path: str):
+    # below this cosine, a semantic node match is too weak to trust — fall back to lexical
+    _SEM_MIN = 0.45
+
+    def __init__(self, path: str, *, embed_url: str = "", embed_model: str = "",
+                 embed_query_instruct: str = ""):
         import json
         import os
         with open(os.path.join(path, "graph.json"), "r", encoding="utf-8") as f:
@@ -285,29 +314,55 @@ class KnowledgeGraph:
         self.meta = g.get("meta", {})
         self.nodes = {n["id"]: n for n in g.get("nodes", [])}
         self._by_text: dict[str, str] = {}
+        # node embeddings (stamped at idle build) enable resolving a query to its node by MEANING
+        self._node_vecs: list[tuple[str, list[float]]] = []
         for n in g.get("nodes", []):
             self._by_text.setdefault(n["text"].lower(), n["id"])
+            v = n.get("embedding")
+            if isinstance(v, (list, tuple)) and v:
+                self._node_vecs.append((n["id"], list(v)))
         self.adj: dict[str, list[tuple]] = {}
         for e in g.get("edges", []):
             self.adj.setdefault(e["src"], []).append((e["tgt"], e["type"], e["weight"], "->"))
             self.adj.setdefault(e["tgt"], []).append((e["src"], e["type"], e["weight"], "<-"))
+        self._embed_url = embed_url
+        self._embed_model = embed_model
+        self._embed_instruct = embed_query_instruct
 
     def _resolve(self, q: str) -> str | None:
-        q = (q or "").strip().lower()
+        q0 = (q or "").strip()
+        q = q0.lower()
         if not q:
             return None
         if q in self._by_text:
             return self._by_text[q]
-        # Prefer the LONGEST entity name that appears in the query (or contains it) — so a whole
-        # question like "「無常」という概念は何と繋がっているか" resolves to its most specific
-        # mentioned entity ("無常"), not the first short term that happens to overlap. This lets
-        # the harness seed graph_neighbors(<the whole question>) and hand over the right subgraph.
+        # Lexical first: the LONGEST entity name literally appearing in (or containing) the query.
+        # A literal entity reference ("…vLLM…") should resolve to it directly — no embed call.
         best: str | None = None
         best_len = 0
         for text, nid in self._by_text.items():
-            if text and (text in q or q in text) and len(text) > best_len:
+            # require len >= 2: single-char entities ("C", "e", "i") are substrings of almost any
+            # text and would pre-empt the semantic fallback for genuinely fuzzy/foreign queries.
+            if len(text) >= 2 and (text in q or q in text) and len(text) > best_len:
                 best, best_len = nid, len(text)
-        return best
+        if best is not None:
+            return best
+        # SEMANTIC fallback: only when nothing matched lexically (a fuzzy / synonym / typo'd entity
+        # reference). Embed the query and pick the closest node by meaning. Bare-entity queries
+        # resolve crisply this way (e.g. a misspelled or paraphrased entity name); a long
+        # multi-topic *question* is better addressed by semantic doc_search, not node resolution.
+        if self._embed_url and self._node_vecs:
+            qv = _embed_query_sync(self._embed_url, self._embed_model,
+                                   (self._embed_instruct or "") + q0)
+            if qv is not None:
+                best_id, best_sim = None, 0.0
+                for nid, nv in self._node_vecs:
+                    s = _cosine(qv, nv)
+                    if s > best_sim:
+                        best_id, best_sim = nid, s
+                if best_id is not None and best_sim >= self._SEM_MIN:
+                    return best_id
+        return None
 
     def neighbors(self, entity: str, hops: int = 1, limit: int = 25) -> str:
         nid = self._resolve(entity)
@@ -350,5 +405,7 @@ class KnowledgeGraph:
         return "\n".join(lines)
 
 
-def load_graph(path: str) -> KnowledgeGraph:
-    return KnowledgeGraph(path)
+def load_graph(path: str, *, embed_url: str = "", embed_model: str = "",
+               embed_query_instruct: str = "") -> KnowledgeGraph:
+    return KnowledgeGraph(path, embed_url=embed_url, embed_model=embed_model,
+                          embed_query_instruct=embed_query_instruct)

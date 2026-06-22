@@ -55,7 +55,10 @@ def make_emaki_tools(cfg: Config) -> tuple[list[Tool], bool]:
 
     if lib.has_graph:
         from ..emaki.graph import load_graph
-        graph = load_graph(cfg.emaki_tree)
+        # pass the embeddings endpoint so graph_neighbors resolves the query to its node by
+        # MEANING (semantic) when the graph's nodes carry embeddings — not just by keyword.
+        graph = load_graph(cfg.emaki_tree, embed_url=cfg.embed_url, embed_model=cfg.embed_model,
+                           embed_query_instruct=cfg.embed_query_instruct)
 
         async def graph_neighbors(args: dict) -> str:
             ent = str(args.get("entity") or args.get("query") or args.get("id") or "").strip()

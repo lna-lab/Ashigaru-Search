@@ -269,16 +269,48 @@ async def research(question: str, cfg: Config | None = None, on_event=None) -> R
             w.task = f"【蔵/我々の既知の記憶】 {w.task}"   # label it as memory for synthesis
             return w
 
+    _ADDRESS_READ_SYSTEM = (
+        "Read THIS one document and extract, in 2-4 sentences, ONLY what bears on the goal — "
+        "grounded strictly in the text. If the document is not actually relevant, say so plainly. "
+        "Do not invent. End with 'Sources:' and the document id.")
+
+    async def _find_addresses() -> list[str]:
+        """Semantic doc_search picks the precise 蔵 addresses (docs) for the overall question."""
+        try:
+            hits = await toolbox.run("doc_search", {"query": question, "k": cfg.recall_dispatch_k})
+        except Exception:
+            return []
+        addrs: list[str] = []
+        for line in hits.splitlines():
+            m = re.search(r"\[([^\]]+)\]", line)
+            if m and ("#" in m.group(1) or "/" in m.group(1)) and m.group(1) not in addrs:
+                addrs.append(m.group(1))
+        return addrs[:cfg.recall_dispatch_k]
+
+    async def _address_scout(i: int, addr: str) -> WorkerResult:
+        # 足軽 dispatched to ONE precise 蔵 address: read it in full and report what bears on the
+        # goal. Parallel across addresses = the fast, broad form of 蔵-recall (住所→派遣).
+        async with sem:
+            if on_event:
+                on_event("worker_start", {"index": i, "task": addr, "recall": True})
+            read_tool = "get_document" if (hasattr(toolbox, "get") and toolbox.get("get_document")) else "read_chunk"
+            doc = await toolbox.run(read_tool, {"id": addr})
+            msgs = [{"role": "system", "content": _ADDRESS_READ_SYSTEM},
+                    {"role": "user", "content": f"Goal: {question}\n\nDocument [{addr}]:\n{doc[:2500]}"}]
+            text = strip_think(await worker_llm.chat(msgs, temperature=cfg.temperature, max_tokens=600))
+            return WorkerResult(i, f"【蔵/{addr}】", text.strip(), sources=[addr], steps=1, ok=True)
+
     # 蔵-recall fires only when the toolbox actually carries a local memory tool.
     _has_local = hasattr(toolbox, "get") and (
         toolbox.get("doc_search") or toolbox.get("tree_overview"))
     recall_on = cfg.recall_commander and bool(_has_local)
+    dispatch_on = recall_on and cfg.recall_dispatch and hasattr(toolbox, "get") and toolbox.get("doc_search")
 
     try:
         escalations = 0
         subs: list[str] = []
         workers: list[WorkerResult] = []
-        recall_worker: WorkerResult | None = None   # 蔵-recall result, held across escalations
+        recall_workers: list[WorkerResult] = []   # 蔵-recall result(s), held across escalations
         while True:
             cfg.max_subquestions = count
             subs = await _plan(orch, question, cfg, exact=(explicit or escalations > 0))
@@ -290,12 +322,18 @@ async def research(question: str, cfg: Config | None = None, on_event=None) -> R
             slot = len(subs)
             if cfg.commander_scout:
                 scout_coros.append(_commander_scout(slot)); slot += 1
-            do_recall = recall_on and recall_worker is None   # read memory once, on round 0
-            if do_recall:
-                scout_coros.append(_commander_recall(slot)); slot += 1
+            n_recall = 0   # 蔵-recall coroutines appended this round (read memory once, on round 0)
+            if recall_on and not recall_workers:
+                if dispatch_on:
+                    # 住所→派遣: precise addresses (semantic doc_search) → one 足軽 per address
+                    for addr in await _find_addresses():
+                        scout_coros.append(_address_scout(slot, addr)); slot += 1; n_recall += 1
+                if n_recall == 0:   # dispatch off, or no addresses found → single-pass recall
+                    scout_coros.append(_commander_recall(slot)); slot += 1; n_recall = 1
             batch = list(await asyncio.gather(*scout_coros))
-            if do_recall:
-                recall_worker = batch.pop()   # the recall pass was appended last; hold it aside
+            if n_recall:
+                recall_workers = batch[-n_recall:]   # the recall/address pass(es), held aside
+                batch = batch[:-n_recall]
             workers = batch   # only the real scouts drive the escalation/quality assessment
 
             if not cfg.escalate or escalations >= cfg.max_escalations:
@@ -313,9 +351,10 @@ async def research(question: str, cfg: Config | None = None, on_event=None) -> R
             kind, count = new_kind, new_count
             escalations += 1
 
-        # fold the 蔵-recall pass into the evidence pool so synthesis + sources see it too
-        if recall_worker is not None and (recall_worker.findings or "").strip():
-            workers = list(workers) + [recall_worker]
+        # fold the 蔵-recall pass(es) into the evidence pool so synthesis + sources see them too
+        fresh_recall = [w for w in recall_workers if w and (w.findings or "").strip()]
+        if fresh_recall:
+            workers = list(workers) + fresh_recall
         if on_event:
             on_event("synthesize", {"workers": len(workers)})
         answer = await _synthesize(orch, question, workers, cfg)
