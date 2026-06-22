@@ -64,6 +64,16 @@ class SourceRegistry:
         s = self.get(ref)
         return s.url if s else None
 
+    def hosts(self) -> set[str]:
+        """Lower-cased hostnames of every registered source URL — the egress gate's fetch
+        capability set (a host a prior web_search surfaced is in-scope to fetch)."""
+        out: set[str] = set()
+        for s in self._by_ref.values():
+            h = (urlparse(s.url).hostname or "").lower()
+            if h:
+                out.add(h)
+        return out
+
     def refs_in(self, text: str) -> list[str]:
         """Ordered, de-duplicated list of registered refs cited in `text`."""
         seen: set[str] = set()

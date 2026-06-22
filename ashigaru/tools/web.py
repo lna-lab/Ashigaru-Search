@@ -3,7 +3,27 @@ from __future__ import annotations
 import httpx
 
 from ..config import Config
+from ..egress import EgressDenied
 from ..registry import Tool
+
+# SearXNG accepts these time_range values; anything else is dropped (no filter).
+_TIME_RANGES = {"day", "week", "month", "year"}
+
+
+async def _gated_fetch(client: httpx.AsyncClient, gate, url: str, discovered, max_hops: int = 5):
+    """GET `url`, following redirects MANUALLY so each hop is gated: a redirect may cross to
+    another public host (www / CDN) but never to a loopback/private host (SSRF). The initial
+    host is assumed already gated by the caller (mode='fetch')."""
+    current = url
+    for _ in range(max_hops + 1):
+        r = await client.get(current, follow_redirects=False)
+        loc = r.headers.get("location")
+        if r.is_redirect and loc:
+            current = str(r.url.join(loc))
+            gate.check(current, mode="redirect", discovered_hosts=discovered)
+            continue
+        return r
+    raise EgressDenied(f"too many redirects from {url!r}")
 
 
 def _extract_text(html: str, limit: int) -> str:
@@ -49,10 +69,14 @@ def _reader_url(cfg: Config, url: str) -> str | None:
     return f"{cfg.reader_base_url.rstrip('/')}/{url}"
 
 
-def make_web_tools(cfg: Config, client: httpx.AsyncClient, sources=None) -> list[Tool]:
+def make_web_tools(cfg: Config, client: httpx.AsyncClient, sources=None, gate=None) -> list[Tool]:
     """Web tools. When `sources` (a SourceRegistry) is given, results are handed to the model
     as stable `[Sn]` ids with NO raw URL (足軽ターボ) — the model fetches and cites by id and
-    the harness re-attaches verbatim URLs. With `sources=None` it falls back to printing URLs."""
+    the harness re-attaches verbatim URLs. With `sources=None` it falls back to printing URLs.
+
+    When `gate` (an EgressGate) is given, every outbound request is policy-checked first:
+    web_search may reach the (loopback/allow-listed) SearXNG; fetch_url may reach only a host a
+    prior search surfaced, never the box's own loopback/LAN/metadata services."""
     async def web_search(args: dict) -> str:
         query = str(args.get("query") or args.get("q") or "").strip()
         if not query:
@@ -61,9 +85,17 @@ def make_web_tools(cfg: Config, client: httpx.AsyncClient, sources=None) -> list
         params = {"q": query, "format": "json", "safesearch": "0"}
         if args.get("lang"):
             params["language"] = str(args["lang"])
+        # recency: pass a SearXNG time_range so "latest/current" sub-questions get fresh sources.
+        tr = str(args.get("time_range") or args.get("recency") or "").strip().lower()
+        if tr in _TIME_RANGES:
+            params["time_range"] = tr
         try:
+            if gate is not None:
+                gate.check(cfg.searxng_url, mode="search")
             r = await client.get(f"{cfg.searxng_url.rstrip('/')}/search", params=params)
             r.raise_for_status()
+        except EgressDenied as e:
+            return f"BLOCKED by egress policy: {e}"
         except httpx.HTTPError as e:
             return (f"ERROR: can't reach SearXNG at {cfg.searxng_url} ({type(e).__name__}). "
                     f"Is it running?  Start it with: "
@@ -101,19 +133,30 @@ def make_web_tools(cfg: Config, client: httpx.AsyncClient, sources=None) -> list
             hint = "fetch_url needs a source 'id' from web_search (e.g. {\"id\":\"S1\"})." if sources is not None \
                    else "fetch_url needs a 'url'."
             return f"ERROR: {hint}"
-        reader = _reader_url(cfg, url)
-        if reader is not None:
-            headers = {}
-            if cfg.reader_api_key:
-                headers["Authorization"] = f"Bearer {cfg.reader_api_key}"
-            r = await client.get(reader, headers=headers)
+        # Egress gate: the target must be a host a prior search surfaced (or allow-listed) and
+        # may never be this box's own loopback/LAN/metadata services.
+        discovered = sources.hosts() if sources is not None else ()
+        try:
+            if gate is not None:
+                gate.check(url, mode="fetch", discovered_hosts=discovered)
+            reader = _reader_url(cfg, url)
+            if reader is not None:
+                headers = {}
+                if cfg.reader_api_key:
+                    headers["Authorization"] = f"Bearer {cfg.reader_api_key}"
+                r = await client.get(reader, headers=headers)  # reader is trusted local infra
+                r.raise_for_status()
+                # the reader returns clean markdown/text already — pass through _extract_text
+                # (trafilatura is a no-op on plain text, so it just truncates to the limit)
+                text = _extract_text(r.text, cfg.fetch_char_limit)
+                return f"Content of {shown} (via reader, truncated to {cfg.fetch_char_limit} chars):\n{text}"
+            if gate is not None:
+                r = await _gated_fetch(client, gate, url, discovered)  # gate each redirect hop
+            else:
+                r = await client.get(url)
             r.raise_for_status()
-            # the reader returns clean markdown/text already — pass through _extract_text
-            # (trafilatura is a no-op on plain text, so it just truncates to the limit)
-            text = _extract_text(r.text, cfg.fetch_char_limit)
-            return f"Content of {shown} (via reader, truncated to {cfg.fetch_char_limit} chars):\n{text}"
-        r = await client.get(url)
-        r.raise_for_status()
+        except EgressDenied as e:
+            return f"BLOCKED by egress policy: {e}"
         # lower-case before the substring check: a server sending "TEXT/HTML" or "Text/Html"
         # would otherwise be wrongly rejected as non-text.
         ctype = r.headers.get("content-type", "").lower()
@@ -122,18 +165,20 @@ def make_web_tools(cfg: Config, client: httpx.AsyncClient, sources=None) -> list
         text = _extract_text(r.text, cfg.fetch_char_limit)
         return f"Content of {shown} (truncated to {cfg.fetch_char_limit} chars):\n{text}"
 
+    _recency = ' Add "time_range":"day"|"week"|"month"|"year" to restrict to recent results.'
     if sources is not None:
-        search_desc = "Search the web via SearXNG. Returns ranked results as [S1] Title (domain) + snippet; cite/fetch them by id."
+        search_desc = ("Search the web via SearXNG. Returns ranked results as [S1] Title (domain) + "
+                       "snippet; cite/fetch them by id." + _recency)
         fetch_desc = "Read a search result's full text by its source id (from web_search). The system tracks the real URL."
         fetch_usage = '<tool>{"name":"fetch_url","arguments":{"id":"S1"}}</tool>'
     else:
-        search_desc = "Search the web via SearXNG. Returns ranked titles, URLs and snippets."
+        search_desc = "Search the web via SearXNG. Returns ranked titles, URLs and snippets." + _recency
         fetch_desc = "Fetch a URL and return its readable main text (use after web_search to read a source)."
         fetch_usage = '<tool>{"name":"fetch_url","arguments":{"url":"https://..."}}</tool>'
 
     return [
         Tool("web_search", search_desc,
-             '<tool>{"name":"web_search","arguments":{"query":"...", "num":6}}</tool>',
+             '<tool>{"name":"web_search","arguments":{"query":"...", "num":6, "time_range":"month"}}</tool>',
              web_search),
         Tool("fetch_url", fetch_desc, fetch_usage, fetch_url),
     ]

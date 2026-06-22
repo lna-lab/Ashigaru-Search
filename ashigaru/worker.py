@@ -127,6 +127,10 @@ async def run_ashigaru(llm: LLMClient, toolbox: ToolBox, task: str, cfg: Config,
     sources: list[str] = []
     notes: list[str] = []          # interim reports filed when the Commander says 'regroup'
     checkins = 0
+    has_read = False               # has the scout opened a source in full yet?
+    nudged_read = False            # we nudge "read before final" at most once (no loop)
+    _READ_TOOLS = ("fetch_url", "read_chunk", "get_document")
+    _can_read = any(toolbox.get(t) for t in _READ_TOOLS) if hasattr(toolbox, "get") else False
 
     def _note(url: str):
         if url and url not in sources:
@@ -162,6 +166,16 @@ async def run_ashigaru(llm: LLMClient, toolbox: ToolBox, task: str, cfg: Config,
         act: Action = parse_action(text)
 
         if act.kind == "final":
+            # grounding gate: don't accept a <final> from a scout that never opened a source
+            # in full (the tiny scout tends to satisfice after the seed search). Nudge ONCE.
+            if _can_read and not has_read and not nudged_read:
+                nudged_read = True
+                messages.append({"role": "assistant", "content": text})
+                messages.append({"role": "user", "content":
+                    "Before your <final>: you have not READ any source in full yet. Open at "
+                    "least one with fetch_url (by id) / read_chunk / get_document so your "
+                    "findings are grounded in the actual content, then write your report."})
+                continue
             findings = act.text
             if registry is not None:                # turbo: resolve [Sn] -> verbatim URLs
                 findings, ref_urls = _attach_sources(findings, registry)
@@ -178,6 +192,8 @@ async def run_ashigaru(llm: LLMClient, toolbox: ToolBox, task: str, cfg: Config,
         if on_event:
             on_event("worker_tool", {"index": index, "step": step, "tool": act.name, "args": act.args})
         result = await toolbox.run(act.name, act.args)
+        if act.name in _READ_TOOLS:
+            has_read = True
         if act.name == "fetch_url":
             if registry is not None and (act.args.get("id") or act.args.get("ref") or act.args.get("source")):
                 _note(registry.resolve(act.args.get("id") or act.args.get("ref") or act.args.get("source")) or "")

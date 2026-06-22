@@ -72,6 +72,18 @@ class Config:
     # optional bearer key (only meaningful for remote r.jina.ai: no-key=20 RPM, key=100/500 RPM)
     reader_api_key: str = field(default_factory=lambda: os.getenv("ASHIGARU_READER_API_KEY", ""))
 
+    # ---- egress sovereignty: default-deny outbound gate + audit trail (see ashigaru.egress) ----
+    # ON by default and transparent to the normal flow (search → fetch a result): only blocks the
+    # model from reaching private/loopback/metadata hosts or fetching a URL no search surfaced
+    # (SSRF defence). Set 0 to disable entirely (legacy behaviour).
+    egress_gate: bool = field(default_factory=lambda: _b("ASHIGARU_EGRESS_GATE", True))
+    # honour search-discovered hosts as the fetch capability (1) or require the allow-list (0)
+    egress_fetch_open: bool = field(default_factory=lambda: _b("ASHIGARU_EGRESS_FETCH_OPEN", True))
+    # comma-separated extra hostnames always permitted (e.g. a remote SearXNG)
+    egress_allow: str = field(default_factory=lambda: os.getenv("ASHIGARU_EGRESS_ALLOW", ""))
+    # path to the append-only egress audit JSONL ("" = enforce policy but don't persist a log)
+    egress_audit: str = field(default_factory=lambda: os.getenv("ASHIGARU_EGRESS_AUDIT", ""))
+
     # ---- X/Twitter SEARCH as a POLITE HUMAN PROXY ("never get scolded, never be a nuisance") ----
     # OFF by default. When on, adds an `x_search` tool. X is just ONE source (web + 蔵 + X), used
     # occasionally. The GOVERNOR below keeps the fleet to a courteous human's scope & cadence so we stay

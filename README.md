@@ -186,6 +186,17 @@ All via env / `.env` (see `.env.example`). Highlights:
 | `ASHIGARU_MAX_SUBQUESTIONS` | `6` | how many scouts to fan out |
 | `ASHIGARU_MAX_CONCURRENCY` | `16` | concurrent scouts in flight |
 | `ASHIGARU_WORKER_MAX_STEPS` | `6` | tool calls per scout |
+| `ASHIGARU_EGRESS_GATE` | `1` | default-deny outbound gate (SSRF defence); `0` to disable |
+| `ASHIGARU_EGRESS_AUDIT` | — | path to an append-only egress audit JSONL (host + reason only) |
+| `ASHIGARU_EGRESS_ALLOW` | — | comma-separated extra hostnames always permitted (e.g. a remote SearXNG) |
+
+**Egress sovereignty.** By default the fleet can only reach hosts a prior `web_search`
+surfaced (the search result is the capability) and never your box's own loopback / LAN /
+metadata services — so a poisoned page or prompt-injected URL can't turn a scout against
+your local vLLM, journal, or `169.254.169.254`. Redirects are followed manually and gated
+per hop. Set `ASHIGARU_EGRESS_AUDIT=/path/egress.jsonl` for a tamper-evident record of every
+host contacted ("references in, secrets out — no audit ⇒ no act"). It's transparent to the
+normal search→fetch flow; see [`ashigaru/egress.py`](ashigaru/egress.py).
 
 **Serving the fleet** (which NVFP4 models, exact vLLM flags, GPU/TP layout, per-model
 throughput, the 大将-brain comparison, and a two-node TP=4-scouts + TP=8-commander split):

@@ -77,8 +77,16 @@ def build_toolbox(cfg: Config) -> ToolBox:
                                headers={"User-Agent": "Ashigaru-Search/0.1 (+https://github.com/lna-lab/Ashigaru-Search)"})
     # one shared registry per run -> globally-unique [Sn] ids across the whole fleet
     sources = SourceRegistry() if cfg.ref_id_sources else None
+    # default-deny egress gate (+ audit) so the fleet can't be steered at this box's own
+    # loopback/LAN/metadata services. None = disabled (legacy behaviour).
+    gate = None
+    if cfg.egress_gate:
+        from .egress import EgressGate, FileAuditLog, NullAudit
+        audit = FileAuditLog(cfg.egress_audit) if cfg.egress_audit else NullAudit()
+        allow = [h.strip() for h in (cfg.egress_allow or "").split(",") if h.strip()]
+        gate = EgressGate(audit, allow, fetch_open=cfg.egress_fetch_open)
     box = ToolBox(client, sources=sources)
-    for t in make_web_tools(cfg, client, sources):
+    for t in make_web_tools(cfg, client, sources, gate=gate):
         box.add(t)
     if cfg.x_search_enabled:
         from .tools.x_search import make_x_search_tools
