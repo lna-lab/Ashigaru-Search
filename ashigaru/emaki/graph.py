@@ -298,10 +298,16 @@ class KnowledgeGraph:
             return None
         if q in self._by_text:
             return self._by_text[q]
+        # Prefer the LONGEST entity name that appears in the query (or contains it) — so a whole
+        # question like "「無常」という概念は何と繋がっているか" resolves to its most specific
+        # mentioned entity ("無常"), not the first short term that happens to overlap. This lets
+        # the harness seed graph_neighbors(<the whole question>) and hand over the right subgraph.
+        best: str | None = None
+        best_len = 0
         for text, nid in self._by_text.items():
-            if q in text or text in q:
-                return nid
-        return None
+            if text and (text in q or q in text) and len(text) > best_len:
+                best, best_len = nid, len(text)
+        return best
 
     def neighbors(self, entity: str, hops: int = 1, limit: int = 25) -> str:
         nid = self._resolve(entity)

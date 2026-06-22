@@ -157,15 +157,27 @@ async def run_ashigaru(llm: LLMClient, toolbox: ToolBox, task: str, cfg: Config,
                     + "\n".join(f"- {n}" for n in notes) + "\n\n" + text)
         return text
 
-    # 足軽ターボ: a tiny scout often hallucinates a <final> instead of deciding to search. Seed the
-    # loop with ONE automatic search on the sub-question so the model always starts from real,
-    # registered ([Sn]) evidence — turning an unreliable agentic task into the grounded-summary
-    # task a small model is good at. (Skipped for test doubles without a real toolbox.)
+    # 足軽ターボ: a tiny scout often hallucinates a <final> instead of deciding to search, and
+    # (measured) even an 8B rarely DECIDES to traverse the knowledge graph — it falls back to flat
+    # search. So we HAND the structure over: seed the loop with automatic call(s) so the model
+    # always starts from real evidence. In recall mode with a built scroll we additionally seed
+    # tree_overview — the 蔵's bird's-eye map — so even a 1.2B rides the graph structure instead
+    # of having to choose to. (Skipped for test doubles without a real toolbox.)
     if cfg.auto_first_search and hasattr(toolbox, "get"):
+        seeds: list[tuple[str, dict]] = []
+        if recall and toolbox.get("graph_neighbors"):
+            # LEAD with the query's TYPED subgraph: the navigator resolves the question to its
+            # most specific entity and returns its typed relations (incl. grounding anchors), so
+            # even a 1.2B narrates the real edges instead of deciding to traverse — cognitive load
+            # → mechanism. (We deliberately do NOT seed the whole-corpus tree_overview here: for a
+            # focused "what connects to X" recall it is orientation noise that drowns the precise
+            # subgraph; the scout can still call tree_overview itself to widen out.)
+            seeds.append(("graph_neighbors", {"entity": task}))
         seed_order = ("doc_search", "web_search") if recall else ("web_search", "doc_search")
-        seed_tool = next((t for t in seed_order if toolbox.get(t)), None)
-        if seed_tool:
-            seed_args = {"query": task}
+        primary = next((t for t in seed_order if toolbox.get(t)), None)
+        if primary:
+            seeds.append((primary, {"query": task}))
+        for seed_tool, seed_args in seeds:
             seed_res = await toolbox.run(seed_tool, seed_args)
             if on_event:
                 on_event("worker_tool", {"index": index, "step": 0, "tool": seed_tool,
@@ -173,6 +185,16 @@ async def run_ashigaru(llm: LLMClient, toolbox: ToolBox, task: str, cfg: Config,
             messages.append({"role": "assistant",
                              "content": f"<tool>{json.dumps({'name': seed_tool, 'arguments': seed_args})}</tool>"})
             messages.append(tool_result_message(seed_tool, seed_res))
+        # Recall mode hands the answer over via the seeds (the typed subgraph + docs ARE the
+        # answer to "what does the 蔵 know about X"). So collapse the scout's job to pure
+        # narration — a tiny model that flails on the multi-step <tool> protocol can still read
+        # back structure it was given. Cognitive load → mechanism, pushed to its limit.
+        if recall and seeds:
+            messages.append({"role": "user", "content":
+                "You now have the 蔵's typed relations (graph_neighbors) and related documents "
+                "above. Do NOT call any more tools. Using ONLY the information already handed to "
+                "you, write your <final> report now: state what the memory connects this to, by "
+                "relation type. If the relations are thin, say so honestly."})
 
     last_text = ""
     for step in range(1, cfg.worker_max_steps + 1):
