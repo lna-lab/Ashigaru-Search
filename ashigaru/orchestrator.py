@@ -26,6 +26,7 @@ _ARR_RE = re.compile(r"\[.*\]", re.DOTALL)
 _NUM_RE = re.compile(r"^\s*(\d{1,2})[ 　]+(\S.*)$", re.DOTALL)
 _SML_RE = re.compile(r"^\s*([SMLsml])[ 　]+(\S.*)$", re.DOTALL)
 _SML_FRAC = {"s": 0.10, "m": 0.50, "l": 1.00}    # 1割 / 5割 / 10割 of the fleet
+_MAX_SCOUTS = 24    # hard ceiling on scouts (raised for wide multilingual triangulation, e.g. 7ch×3)
 
 
 def _current_datetime_context() -> str:
@@ -56,46 +57,51 @@ def _think(mode: str) -> bool | None:
     return True if m == "on" else False if m == "off" else None
 
 
-_LANG_NAMES = {"en": "English", "zh": "Chinese", "ja": "Japanese", "ko": "Korean",
-               "de": "German", "fr": "French", "es": "Spanish", "ru": "Russian"}
+_LANG_NAMES = {"en": "English", "zh": "Chinese (Simplified / Mandarin)",
+               "zh-tw": "Traditional Chinese (Taiwan)", "ja": "Japanese", "ko": "Korean",
+               "de": "German", "fr": "French", "es": "Spanish", "ru": "Russian",
+               "ar": "Arabic", "tr": "Turkish", "pt": "Portuguese", "hi": "Hindi",
+               "it": "Italian", "id": "Indonesian", "fa": "Persian"}
 
 
 def _multilingual_clause(langs_csv: str) -> str:
-    """Planning instruction that routes sub-questions to authoritative-source languages.
+    """Planning instruction that TRIANGULATES across language-regions.
 
-    The accuracy ceiling of a research run is the SOURCE quality, not the model: a niche
-    technical question answered only from one language's secondhand blogs inherits that
-    language's errors. Issuing sub-questions in the language whose PRIMARY sources live there
-    (English for AI/ML/sci, Chinese for much hardware/LLM work, the local language for domestic
-    topics) reaches better evidence — and spreading scouts across languages makes the parallel
-    fleet cover non-overlapping source pools instead of re-reading the same ones."""
+    A research run's accuracy ceiling is the SOURCE, not the model — but which language's
+    sources are "right" is not fixed: it's subjective and shifts with the topic and the moment,
+    so deferring to one presumed authority (e.g. "English wins for tech") just trades one
+    language's blind spot for another's. The robust move is to gather INDEPENDENT perspectives
+    from several regions and let the synthesis cross-check them, surfacing disagreement instead
+    of flattening it. Spreading scouts across languages also stops the parallel fleet from
+    re-reading the same pool."""
     langs = [l.strip().lower() for l in langs_csv.split(",") if l.strip()]
     if not langs:
         return ""
     names = ", ".join(_LANG_NAMES.get(l, l) for l in langs)
     return (
-        f"\n\nMULTILINGUAL SOURCING — write each sub-question in the language whose web sources are "
-        f"most AUTHORITATIVE for that facet, and deliberately SPREAD the sub-questions across these "
-        f"languages: {names}. For AI / ML / technical / scientific facets, primary sources are usually "
-        f"in English (official docs, arXiv, vendor engineering blogs) and Chinese; use the local "
-        f"language only for domestic/local facets. Covering multiple source-regions avoids inheriting "
-        f"any single language's mistakes. (The user's final answer is written separately in the user's "
-        f"own language — do NOT translate the sub-questions back.)")
+        f"\n\nMULTILINGUAL TRIANGULATION — write the sub-questions across these languages: {names}, "
+        f"to gather INDEPENDENT evidence from different source-regions. No single language is "
+        f"automatically authoritative — which sources are correct varies by topic and shifts over "
+        f"time, so cross-checking regions beats trusting one. Distribute the facets so several "
+        f"languages are exercised (a global facet can be asked in English or Chinese; a regional one "
+        f"in its local language; a contested/important facet can be asked in TWO languages to "
+        f"cross-check). The final answer is synthesized in the user's own language and should SURFACE "
+        f"regional disagreements, not hide them. Do NOT translate the sub-questions back.")
 
 
 def _tier_count(tag: str, fleet_size: int) -> int:
-    return max(1, min(12, math.ceil(fleet_size * _SML_FRAC[tag])))
+    return max(1, min(_MAX_SCOUTS, math.ceil(fleet_size * _SML_FRAC[tag])))
 
 
 def parse_scout_count(question: str, default: int, fleet_size: int = 10) -> tuple[int, str, str]:
-    """A leading token + space picks the scout count (overrides default), clamped 1..12:
+    """A leading token + space picks the scout count (overrides default), clamped 1.._MAX_SCOUTS:
       - "3 compare X and Y"  -> (3, "compare X and Y", "num")       explicit number
       - "M latest on X"      -> density tag: S=10% / M=50% / L=100% of `fleet_size`,
                                 rounded UP (ceil), min 1 (fleet 10 -> S=1, M=5, L=10).
     Returns (count, cleaned_question, kind) where kind ∈ {num, s, m, l, default}."""
     m = _NUM_RE.match(question)
     if m:
-        return max(1, min(int(m.group(1)), 12)), m.group(2).strip(), "num"
+        return max(1, min(int(m.group(1)), _MAX_SCOUTS)), m.group(2).strip(), "num"
     m = _SML_RE.match(question)
     if m:
         tag = m.group(1).lower()
@@ -104,9 +110,9 @@ def parse_scout_count(question: str, default: int, fleet_size: int = 10) -> tupl
 
 
 def _escalate(kind: str, count: int, cfg: Config) -> tuple[str, int] | None:
-    """Next density tier on a thin run. S→M→L; numeric/default → ×2 (cap 12). None = capped."""
+    """Next density tier on a thin run. S→M→L; numeric/default → ×2 (cap _MAX_SCOUTS). None = capped."""
     if kind in ("num", "default"):
-        nc = min(12, count * 2)
+        nc = min(_MAX_SCOUTS, count * 2)
         return ("num", nc) if nc > count else None
     ladder = sorted({_tier_count("s", cfg.fleet_size),
                      _tier_count("m", cfg.fleet_size),

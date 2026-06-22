@@ -35,7 +35,7 @@ def test_scout_count():
         # (question, default, fleet) -> (n, cleaned, kind)
         (("3 compare X and Y", 6, 10), (3, "compare X and Y", "num")),
         (("5 何々について調べたい", 6, 10), (5, "何々について調べたい", "num")),
-        (("99 too many", 6, 10), (12, "too many", "num")),          # clamp to 12
+        (("99 too many", 6, 10), (24, "too many", "num")),          # clamp to _MAX_SCOUTS=24
         (("S quick check", 6, 10), (1, "quick check", "s")),        # 10% of 10 = 1
         (("M latest on X", 6, 10), (5, "latest on X", "m")),        # 50% of 10 = 5
         (("L deep survey", 6, 10), (10, "deep survey", "l")),       # 100% of 10 = 10
@@ -61,9 +61,10 @@ def test_escalate():
         (("l", 10), None),        # L capped
         (("num", 1), ("num", 2)), # numeric ×2
         (("num", 5), ("num", 10)),# 5 -> 10
-        (("num", 6), ("num", 12)),# 12 (cap)
-        (("num", 12), None),      # already capped
-        (("default", 6), ("num", 12)),  # 12 (cap)
+        (("num", 6), ("num", 12)),# 6 -> 12
+        (("num", 16), ("num", 24)),# 16 -> 24 (cap)
+        (("num", 24), None),      # already at _MAX_SCOUTS=24
+        (("default", 6), ("num", 12)),  # 6 -> 12
     ]
     for (args, exp) in cases:
         got = _escalate(args[0], args[1], c)

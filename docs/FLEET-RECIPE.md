@@ -294,7 +294,17 @@ Scale scouts by adding more TP=1 replicas behind rrproxy (near-linear throughput
   - 8B-A1B scout → 4.0 (avoided it). **8B is the sweet spot.**
   - 35B-A3B scout (TP=4, 4 GPUs) → 4.0 — *no gain* over 8B despite 4× the hardware. Bigger brains
     re-read the same wrong sources; the ceiling is the EVIDENCE, not the model.
-  - **`ASHIGARU_SEARCH_LANGS=en,zh,ja` → 4.67 (best, and faster)** — the Commander writes each
+  - **`ASHIGARU_SEARCH_LANGS=en,zh,ja` → 4.67 (best, and faster)**
+- **Scaling the fan-out has a ceiling — domain-match the languages, don't max them** (measured):
+  multilingual sub-questions fire correctly across 8 channels (incl. Traditional Chinese, Arabic,
+  Turkish, French) up to the `_MAX_SCOUTS=24` cap. BUT yield/accuracy do NOT keep climbing:
+  5 scouts ≈ the sweet spot for a focused question (4.67); 16–21 add mostly-redundant sources
+  (40–61) without proportional correctness; a 24-scout run on an over-specific question collapsed
+  to 0 sources — the single SearXNG instance + single scout replica saturate (~24 scouts × 6 steps
+  ≈ 140 concurrent search/fetch ops). The bottleneck moves from the model to the SEARCH BACKEND.
+  Practical guidance: ~6–8 scouts = roughly ONE per well-chosen, domain-matched channel (tech →
+  en,zh,ja; macro/markets/geopolitics → +ko,ar,tr,fr for pre-English-media regional signal). To go
+  truly wider, scale SearXNG and data-parallel the scout first. — the Commander writes each
     sub-question in the language whose primary sources are authoritative (English for AI/ML/sci,
     Chinese for much HW/LLM work) and spreads scouts across regions; synthesis translates back to
     the user's language. This is the real accuracy lever once the scout is decent — multilingual
