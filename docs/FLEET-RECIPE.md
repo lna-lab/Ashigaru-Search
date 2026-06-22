@@ -160,6 +160,17 @@ ASHIGARU_ORCH_API_KEY=EMPTY
 ASHIGARU_ORCH_MAX_TOKENS=16384
 ASHIGARU_REQUEST_TIMEOUT=300
 
+# Per-role Commander thinking (reasoning-model commanders only; "auto"|"on"|"off").
+# MEASURED (8-config sweep, see §6): turning thinking OFF for grounded synthesis is a free win —
+# ~4-5x faster synth, equal-or-better accuracy, and it stays HONEST (hedges instead of confidently
+# "reasoning" its way to a wrong claim). Planning keeps thinking (sharper decomposition).
+ASHIGARU_ORCH_THINK_PLAN=on
+ASHIGARU_ORCH_THINK_SYNTH=off
+ASHIGARU_ORCH_THINK_JUDGE=off
+# Player-coach (send the idle Commander out as one extra premium scout): the sweep did NOT show an
+# accuracy gain (more sources != more correct) and it adds wall-time, so it's opt-in, default off.
+# ASHIGARU_COMMANDER_SCOUT=1
+
 # Scout count: 5 direct (no thin warm-up round), escalate ×2 to 10 if quality is thin.
 # Prefix "M your question" (=5) or "L your question" (=10) to override.
 ASHIGARU_MAX_SUBQUESTIONS=5
@@ -263,3 +274,16 @@ Scale scouts by adding more TP=1 replicas behind rrproxy (near-linear throughput
 - **Start with 5 scouts, not 3.** The default 3 almost always triggers a quality-escalation
   (3→9 in the old config). Starting at 5 with ×2 escalation (5→10) skips the wasted
   thin round and is faster overall.
+
+- **Commander thinking: OFF for synthesis, ON for planning** (measured, 8-config grid sweep,
+  blind 3-judge accuracy scoring on a hard technical question). Findings:
+  - `synth` thinking OFF was the top config on accuracy AND honesty while being ~4-5x faster on
+    the synth step — thinking sometimes "reasons" a reasoning-model into a confident wrong claim;
+    no-think stays closer to the grounded scout evidence. **Adopt `ASHIGARU_ORCH_THINK_SYNTH=off`.**
+  - `plan` thinking OFF showed no benefit (slightly worse) — keep planning thinking ON.
+  - **Player-coach (`COMMANDER_SCOUT`) did not raise accuracy** — the run with the MOST sources (20)
+    still got the core fact (GPU generation) wrong. More sources ≠ more correct. Opt-in only.
+  - **Caveat:** accuracy is dominated by scout/source quality, NOT the commander knobs — every
+    config scored low because the web sources for the niche question were themselves wrong and a
+    1.2B scout can't correct them. To actually raise the accuracy ceiling, upgrade the scout
+    (e.g. LFM2.5-8B-A1B) or the sources — not the Commander's reasoning toggles.

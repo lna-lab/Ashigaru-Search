@@ -104,6 +104,15 @@ class Config:
     # Reasoning models burn tokens on <think> before emitting content — give headroom.
     # 16384 comfortably covers synthesis of 9 rich scout reports + reasoning overhead.
     orch_max_tokens: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_ORCH_MAX_TOKENS", "16384")))
+    # Per-role Commander reasoning ("auto" = model default | "on" | "off"). For reasoning-model
+    # commanders, planning benefits from thinking (sharper decomposition) while grounded
+    # synthesis/judgment do not — and "off" runs them much faster with no empty-content risk.
+    orch_think_plan: str = field(default_factory=lambda: os.getenv("ASHIGARU_ORCH_THINK_PLAN", "auto"))
+    orch_think_synth: str = field(default_factory=lambda: os.getenv("ASHIGARU_ORCH_THINK_SYNTH", "auto"))
+    orch_think_judge: str = field(default_factory=lambda: os.getenv("ASHIGARU_ORCH_THINK_JUDGE", "auto"))
+    # Player-coach: after planning, send the Commander out as one extra PREMIUM scout (it's
+    # otherwise idle during the scout phase). Raises the floor of the synthesis evidence pool.
+    commander_scout: bool = field(default_factory=lambda: _b("ASHIGARU_COMMANDER_SCOUT", False))
     verbose: bool = field(default_factory=lambda: _b("ASHIGARU_VERBOSE", True))
 
     def __post_init__(self):

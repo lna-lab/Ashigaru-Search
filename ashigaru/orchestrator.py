@@ -50,6 +50,12 @@ search, together fully answer it. Cover distinct facets (definitions, current st
 comparisons, caveats). Output ONLY a JSON array of strings, nothing else."""
 
 
+def _think(mode: str) -> bool | None:
+    """Map a per-role thinking mode string to the LLMClient.chat ``thinking`` arg."""
+    m = (mode or "auto").strip().lower()
+    return True if m == "on" else False if m == "off" else None
+
+
 def _tier_count(tag: str, fleet_size: int) -> int:
     return max(1, min(12, math.ceil(fleet_size * _SML_FRAC[tag])))
 
@@ -121,7 +127,8 @@ async def _plan(orch: LLMClient, question: str, cfg: Config, exact: bool = False
     ]
     # reasoning models (e.g. LFM2.5) think at length before the array — give room so
     # the JSON actually gets emitted after </think> (else we fall back to 1 scout)
-    text = strip_think(await orch.chat(msgs, temperature=cfg.temperature, max_tokens=cfg.orch_max_tokens))
+    text = strip_think(await orch.chat(msgs, temperature=cfg.temperature, max_tokens=cfg.orch_max_tokens,
+                                       thinking=_think(cfg.orch_think_plan)))
     m = _ARR_RE.search(text)
     if m:
         try:
@@ -142,7 +149,8 @@ async def _synthesize(orch: LLMClient, question: str, workers: list[WorkerResult
     user = f"ORIGINAL QUESTION:\n{question}\n\nSCOUT FINDINGS:\n" + "\n\n".join(blocks)
     msgs = [{"role": "system", "content": SYNTH_SYSTEM + "\n\n" + _current_datetime_context()},
             {"role": "user", "content": user}]
-    return strip_think(await orch.chat(msgs, temperature=cfg.temperature, max_tokens=cfg.orch_max_tokens))
+    return strip_think(await orch.chat(msgs, temperature=cfg.temperature, max_tokens=cfg.orch_max_tokens,
+                                       thinking=_think(cfg.orch_think_synth)))
 
 
 def _heuristic_ok(w: WorkerResult, cfg: Config) -> tuple[bool, str]:
@@ -164,7 +172,8 @@ async def _judge(orch: LLMClient, subq: str, w: WorkerResult, cfg: Config) -> tu
         {"role": "user", "content": f"Sub-question: {subq}\n\nScout report:\n{w.findings}\n\n"
                                      f"Cited sources: {w.sources or '(none)'}"},
     ]
-    txt = strip_think(await orch.chat(msgs, temperature=0.0, max_tokens=cfg.orch_max_tokens // 2))
+    txt = strip_think(await orch.chat(msgs, temperature=0.0, max_tokens=cfg.orch_max_tokens // 2,
+                                      thinking=_think(cfg.orch_think_judge)))
     m = re.search(r"\{.*\}", txt, re.DOTALL)
     if not m:
         return True, ""                       # judge unsure -> don't block
@@ -183,7 +192,7 @@ async def _assess(orch: LLMClient, subs: list[str], workers: list[WorkerResult],
         if ok and cfg.quality_judge:
             ok, _ = await _judge(orch, subq, w, cfg)
         return ok
-    flags = await asyncio.gather(*[_ok(subs[w.index], w) for w in workers])
+    flags = await asyncio.gather(*[_ok(w.task, w) for w in workers])
     needed = max(1, math.ceil(0.5 * len(workers)))
     return sum(1 for f in flags if f), needed
 
@@ -205,6 +214,16 @@ async def research(question: str, cfg: Config | None = None, on_event=None) -> R
             return await run_ashigaru(worker_llm, toolbox, q, cfg, index=i, on_event=on_event,
                                       orch=orch, overall=question)
 
+    async def _commander_scout(i: int) -> WorkerResult:
+        # player-coach: the otherwise-idle Commander investigates the OVERALL question as one
+        # premium 27B-class scout, complementing the small scouts' per-facet breadth. orch=None
+        # so it doesn't supervise itself.
+        async with sem:
+            if on_event:
+                on_event("worker_start", {"index": i, "task": question, "commander": True})
+            return await run_ashigaru(orch, toolbox, question, cfg, index=i, on_event=on_event,
+                                      orch=None, overall=question)
+
     try:
         escalations = 0
         subs: list[str] = []
@@ -216,7 +235,10 @@ async def research(question: str, cfg: Config | None = None, on_event=None) -> R
                 on_event("plan", {"subquestions": subs,
                                   "requested": count if (explicit or escalations) else None,
                                   "escalation": escalations})
-            workers = list(await asyncio.gather(*[_one(i, q) for i, q in enumerate(subs)]))
+            scout_coros = [_one(i, q) for i, q in enumerate(subs)]
+            if cfg.commander_scout:
+                scout_coros.append(_commander_scout(len(subs)))
+            workers = list(await asyncio.gather(*scout_coros))
 
             if not cfg.escalate or escalations >= cfg.max_escalations:
                 break

@@ -22,15 +22,23 @@ class LLMClient:
         top_k: int | None = 80,
         repetition_penalty: float | None = 1.05,
         stop: list[str] | None = None,
+        thinking: bool | None = None,
     ) -> str:
         """Return the assistant message content. extra_body carries vLLM-only sampling
-        params (top_k / repetition_penalty) which OpenAI ignores harmlessly."""
+        params (top_k / repetition_penalty) which OpenAI ignores harmlessly.
+
+        ``thinking`` toggles a reasoning model's hidden <think> pass via the chat template:
+        ``False`` disables it (grounded tasks like synthesis don't need it and run far faster),
+        ``True`` forces it on, ``None`` leaves the model default. Implemented with the
+        Qwen3-family ``enable_thinking`` chat-template kwarg; models without it ignore the kwarg."""
         payload: dict[str, Any] = {
             "model": model or self.model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if thinking is not None:
+            payload["chat_template_kwargs"] = {"enable_thinking": bool(thinking)}
         if stop:
             payload["stop"] = stop
         extra = {}
