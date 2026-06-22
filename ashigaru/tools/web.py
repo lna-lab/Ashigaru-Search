@@ -10,7 +10,9 @@ def _extract_text(html: str, limit: int) -> str:
     """Best-effort main-text extraction. Uses trafilatura if available, else BeautifulSoup."""
     try:
         import trafilatura
-        txt = trafilatura.extract(html, include_comments=False, include_tables=False)
+        # keep tables: spec / pricing / benchmark / comparison rows are exactly the dense facts
+        # a scout wants, and they live in <table> — dropping them silently loses the best content.
+        txt = trafilatura.extract(html, include_comments=False, include_tables=True)
         if txt:
             return txt[:limit]
     except Exception:
@@ -112,7 +114,9 @@ def make_web_tools(cfg: Config, client: httpx.AsyncClient, sources=None) -> list
             return f"Content of {shown} (via reader, truncated to {cfg.fetch_char_limit} chars):\n{text}"
         r = await client.get(url)
         r.raise_for_status()
-        ctype = r.headers.get("content-type", "")
+        # lower-case before the substring check: a server sending "TEXT/HTML" or "Text/Html"
+        # would otherwise be wrongly rejected as non-text.
+        ctype = r.headers.get("content-type", "").lower()
         if "html" not in ctype and "text" not in ctype and "xml" not in ctype:
             return f"(non-text content: {ctype}) {shown}"
         text = _extract_text(r.text, cfg.fetch_char_limit)

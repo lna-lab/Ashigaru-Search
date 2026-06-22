@@ -6,28 +6,43 @@ Build an index from a folder of .txt/.md/.pdf with:  `ashigaru-index <folder> <o
 """
 from __future__ import annotations
 import pickle
+from collections.abc import Mapping
 
 from ..config import Config
 from ..registry import Tool
-
-_TOKEN = __import__("re").compile(r"\w+", __import__("re").UNICODE)
-
-
-def _tok(s: str) -> list[str]:
-    return [w.lower() for w in _TOKEN.findall(s)]
+from ..tok import tokenize as _tok   # CJK-aware tokenizer, shared with emaki (index==query)
 
 
 def make_rag_tools(cfg: Config) -> list[Tool]:
+    # Fail closed on a corrupt / wrong-shape corpus pickle rather than indexing garbage or
+    # crashing the whole toolbox build. The contract is {"chunks": [{id, source, text}], ...}.
     with open(cfg.rag_index, "rb") as f:
-        idx = pickle.load(f)
-    chunks: list[dict] = idx["chunks"]          # [{id, source, text}, ...]
-    from rank_bm25 import BM25Okapi
-    bm25 = BM25Okapi([_tok(c["text"]) for c in chunks])
+        blob = pickle.load(f)
+    if not isinstance(blob, Mapping) or not isinstance(blob.get("chunks"), list):
+        raise ValueError(
+            f"corpus pickle {cfg.rag_index!r} is not a {{'chunks': [...]}} mapping")
+    # keep only well-formed chunks (a Mapping with an id and non-empty text)
+    chunks: list[dict] = []
+    for c in blob["chunks"]:
+        if not isinstance(c, Mapping):
+            continue
+        if not c.get("id") or not (c.get("text") or "").strip():
+            continue
+        chunks.append({"id": str(c["id"]), "source": c.get("source") or "", "text": str(c["text"])})
+
+    # BM25Okapi divides by the corpus size, so it cannot be built over an empty corpus —
+    # leave bm25 None and short-circuit doc_search (an empty index is valid: returns no hits).
+    bm25 = None
+    if chunks:
+        from rank_bm25 import BM25Okapi
+        bm25 = BM25Okapi([_tok(c["text"]) or [""] for c in chunks])
 
     async def doc_search(args: dict) -> str:
         query = str(args.get("query") or "").strip()
         if not query:
             return "ERROR: doc_search needs a 'query'."
+        if bm25 is None:
+            return f"No local corpus indexed (0 chunks). No matches for: {query}"
         k = int(args.get("k") or 5)
         scores = bm25.get_scores(_tok(query))
         order = sorted(range(len(chunks)), key=lambda i: scores[i], reverse=True)[:k]

@@ -2,9 +2,10 @@
 
 Default backend is ZERO-GPU and dependency-free: a hand-rolled TF-IDF + spherical k-means,
 recursed into a branching topic tree. Deterministic (farthest-first seeding, no RNG) so a
-build is reproducible. An optional `embed` backend (sentence-transformers) gives better
-topical cohesion — and better CJK handling, since the plain \\w+ tokenizer is coarse on
-languages without word spaces — but it is opt-in to preserve Ashigaru's zero-GPU ethos.
+build is reproducible. Tokenization is CJK-aware (shared `ashigaru.tok`): space-less Japanese
+splits into single-character tokens so the topic tree can actually cluster Japanese corpora;
+an optional `embed` backend (sentence-transformers) gives finer topical cohesion but is opt-in
+to preserve Ashigaru's zero-GPU ethos.
 
 This is independently authored clustering math (clean-room): the upstream Corpus2Skill repo
 is all-rights-reserved and none of its code is used. The recursive-cluster-then-summarise
@@ -13,11 +14,10 @@ shape is the publicly-described idea (RAPTOR 2401.18059 / Corpus2Skill 2604.1457
 from __future__ import annotations
 
 import math
-import re
 
+from ..tok import is_cjk_char
+from ..tok import tokenize as _base_tokenize
 from .schema import Node
-
-_TOKEN = re.compile(r"\w+", re.UNICODE)
 
 # a light, language-agnostic-ish stopword set — keeps the tree from clustering on glue words
 # (the AIOS reading-graph cypher showed "You/Access/The/For" noise nodes; we filter up front)
@@ -34,8 +34,11 @@ _STOP = {
 
 
 def tokenize(text: str) -> list[str]:
-    return [w for w in (t.lower() for t in _TOKEN.findall(text))
-            if len(w) > 1 and w not in _STOP and not w.isdigit()]
+    # CJK-aware base tokens, then drop glue: single-char CJK ideographs/kana are MEANINGFUL
+    # (the unit for space-less languages) so they're kept; short ASCII runs / stopwords / pure
+    # digits are dropped as noise — same intent as before, now correct for Japanese.
+    return [w for w in _base_tokenize(text)
+            if is_cjk_char(w) or (len(w) > 1 and w not in _STOP and not w.isdigit())]
 
 
 # ---------------------------------------------------------------------------
