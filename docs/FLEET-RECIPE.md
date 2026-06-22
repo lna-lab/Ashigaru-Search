@@ -287,3 +287,15 @@ Scale scouts by adding more TP=1 replicas behind rrproxy (near-linear throughput
     config scored low because the web sources for the niche question were themselves wrong and a
     1.2B scout can't correct them. To actually raise the accuracy ceiling, upgrade the scout
     (e.g. LFM2.5-8B-A1B) or the sources — not the Commander's reasoning toggles.
+
+- **Scout size has a sweet spot; SOURCE LANGUAGE breaks the ceiling** (measured, blind-judged,
+  same question):
+  - 1.2B-JP scout → overall 3.33 (fell for an H100/Hopper error from JA blogs).
+  - 8B-A1B scout → 4.0 (avoided it). **8B is the sweet spot.**
+  - 35B-A3B scout (TP=4, 4 GPUs) → 4.0 — *no gain* over 8B despite 4× the hardware. Bigger brains
+    re-read the same wrong sources; the ceiling is the EVIDENCE, not the model.
+  - **`ASHIGARU_SEARCH_LANGS=en,zh,ja` → 4.67 (best, and faster)** — the Commander writes each
+    sub-question in the language whose primary sources are authoritative (English for AI/ML/sci,
+    Chinese for much HW/LLM work) and spreads scouts across regions; synthesis translates back to
+    the user's language. This is the real accuracy lever once the scout is decent — multilingual
+    primary sources beat one language's secondhand blogs, and parallel scouts stop overlapping.

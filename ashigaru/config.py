@@ -51,6 +51,11 @@ class Config:
     supervise_after: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_SUPERVISE_AFTER", "1")))
     max_checkins: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_MAX_CHECKINS", "5")))
     search_results: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_SEARCH_RESULTS", "6")))
+    # Multilingual sourcing: comma list of language codes (e.g. "en,zh,ja"). When set, the Commander
+    # writes sub-questions in the language whose web sources are most AUTHORITATIVE per facet and spreads
+    # them across these languages, so the fleet hits primary (often English/Chinese) sources instead of
+    # one language's noisy/secondhand blogs. The final answer is still written in the user's language.
+    search_langs: str = field(default_factory=lambda: os.getenv("ASHIGARU_SEARCH_LANGS", ""))
     # 足軽ターボ: hand the scout stable [Sn] source ids instead of raw URLs, and re-attach the
     # verbatim URLs in the harness. Stops a small model from corrupting/dropping long URLs.
     ref_id_sources: bool = field(default_factory=lambda: _b("ASHIGARU_REF_ID_SOURCES", True))

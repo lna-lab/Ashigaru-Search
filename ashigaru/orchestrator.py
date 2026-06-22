@@ -56,6 +56,33 @@ def _think(mode: str) -> bool | None:
     return True if m == "on" else False if m == "off" else None
 
 
+_LANG_NAMES = {"en": "English", "zh": "Chinese", "ja": "Japanese", "ko": "Korean",
+               "de": "German", "fr": "French", "es": "Spanish", "ru": "Russian"}
+
+
+def _multilingual_clause(langs_csv: str) -> str:
+    """Planning instruction that routes sub-questions to authoritative-source languages.
+
+    The accuracy ceiling of a research run is the SOURCE quality, not the model: a niche
+    technical question answered only from one language's secondhand blogs inherits that
+    language's errors. Issuing sub-questions in the language whose PRIMARY sources live there
+    (English for AI/ML/sci, Chinese for much hardware/LLM work, the local language for domestic
+    topics) reaches better evidence — and spreading scouts across languages makes the parallel
+    fleet cover non-overlapping source pools instead of re-reading the same ones."""
+    langs = [l.strip().lower() for l in langs_csv.split(",") if l.strip()]
+    if not langs:
+        return ""
+    names = ", ".join(_LANG_NAMES.get(l, l) for l in langs)
+    return (
+        f"\n\nMULTILINGUAL SOURCING — write each sub-question in the language whose web sources are "
+        f"most AUTHORITATIVE for that facet, and deliberately SPREAD the sub-questions across these "
+        f"languages: {names}. For AI / ML / technical / scientific facets, primary sources are usually "
+        f"in English (official docs, arXiv, vendor engineering blogs) and Chinese; use the local "
+        f"language only for domestic/local facets. Covering multiple source-regions avoids inheriting "
+        f"any single language's mistakes. (The user's final answer is written separately in the user's "
+        f"own language — do NOT translate the sub-questions back.)")
+
+
 def _tier_count(tag: str, fleet_size: int) -> int:
     return max(1, min(12, math.ceil(fleet_size * _SML_FRAC[tag])))
 
@@ -122,7 +149,7 @@ async def _plan(orch: LLMClient, question: str, cfg: Config, exact: bool = False
     constraint = f"into EXACTLY {n}" if exact else f"into {n} or fewer"
     msgs = [
         {"role": "system", "content": PLAN_SYSTEM.format(constraint=constraint)
-            + "\n\n" + _current_datetime_context()},
+            + "\n\n" + _current_datetime_context() + _multilingual_clause(cfg.search_langs)},
         {"role": "user", "content": question},
     ]
     # reasoning models (e.g. LFM2.5) think at length before the array — give room so
