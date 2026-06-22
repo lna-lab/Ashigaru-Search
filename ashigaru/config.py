@@ -36,6 +36,13 @@ class Config:
     # engines SearXNG scrapes CAPTCHA a bursting IP, so spacing the concurrent scouts' searches
     # keeps outbound traffic human-paced (e.g. 0.2 ⇒ ~5 req/s ⇒ 60 searches over 12 s). 0 = off.
     searxng_min_interval_s: float = field(default_factory=lambda: float(os.getenv("ASHIGARU_SEARXNG_MIN_INTERVAL_S", "0")))
+    # SEMANTIC doc_search: an OpenAI-compatible /v1/embeddings endpoint. When set AND the corpus
+    # chunks carry an ``embedding``, doc_search addresses by MEANING (cosine) instead of keywords
+    # — fixing keyword-collision whiffs. "" = BM25 only (zero-GPU default). Falls back to BM25 if
+    # the endpoint is unreachable. The query instruct is prepended to the query (model-specific).
+    embed_url: str = field(default_factory=lambda: os.getenv("ASHIGARU_EMBED_URL", ""))
+    embed_model: str = field(default_factory=lambda: os.getenv("ASHIGARU_EMBED_MODEL", ""))
+    embed_query_instruct: str = field(default_factory=lambda: os.getenv("ASHIGARU_EMBED_QUERY_INSTRUCT", ""))
 
     # ---- behaviour knobs ----
     max_concurrency: int = field(default_factory=lambda: int(os.getenv("ASHIGARU_MAX_CONCURRENCY", "16")))
