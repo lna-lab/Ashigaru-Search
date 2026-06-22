@@ -1,6 +1,9 @@
-# Minimal SearXNG settings for Ashigaru-Search.
-# Key bits: enable the JSON API (off by default) and disable the limiter so the
-# fleet can query programmatically. CHANGE the secret_key before any public exposure.
+# Ashigaru-Search SearXNG — broadened engine set.
+# Root cause of empty results (2026-06-22): the popular general engines (google, duckduckgo,
+# brave, startpage) CAPTCHA/block our egress IP under bursty fleet load. Fix = ENGINE DIVERSITY:
+# enable many engines incl. default-disabled robust ones (mojeek/mwmbl/presearch) and regional
+# ones (baidu/sogou for ZH, yandex), so a query fans across many and survives any subset blocking.
+# More SearXNG *containers* on the same IP do NOT help (same block); diverse engines do.
 use_default_settings: true
 
 server:
@@ -13,13 +16,26 @@ search:
   safe_search: 0
   formats:
     - html
-    - json                 # <-- required: lets web_search request &format=json
+    - json
 
-# Trim to fast, reliable general engines (tweak to taste).
 engines:
-  - name: duckduckgo
-    disabled: false
-  - name: brave
-    disabled: false
-  - name: wikipedia
-    disabled: false
+  # popular general (often blocked under load, but keep them for when they're healthy)
+  - {name: duckduckgo, disabled: false}
+  - {name: brave, disabled: false}
+  - {name: startpage, disabled: false}
+  - {name: bing, disabled: false}
+  # robust / less-blocked general (default-disabled in SearXNG — enable them)
+  - {name: mojeek, disabled: false}
+  - {name: mwmbl, disabled: false}
+  - {name: presearch, disabled: false}
+  - {name: qwant, disabled: false}
+  # knowledge
+  - {name: wikipedia, disabled: false}
+  - {name: wikidata, disabled: false}
+  # regional (multilingual triangulation; we don't hammer these)
+  - {name: baidu, disabled: false}
+  - {name: sogou, disabled: false}
+  - {name: yandex, disabled: false}
+  # academic / technical (great for the tech facets)
+  - {name: arxiv, disabled: false}
+  - {name: github, disabled: false}
