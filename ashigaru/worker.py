@@ -20,6 +20,32 @@ _URL_RE = re.compile(r'https?://[^\s)\]<>"\']+')
 _SRC_SECTION_RE = re.compile(r'\n\s*(?:Sources?|出典|参考(?:文献)?|参照)\s*[:：].*$',
                              re.IGNORECASE | re.DOTALL)
 
+# Wave-A signals a tool result can carry: a failure-class tag (registry tags errors
+# ``ERROR running <tool> [<class>]: …``) and a Gate-Guard verdict (web tool emits
+# ``⚠flagged(<flags>)`` per result line and ``BLOCKED by gate guard …`` for a REJECT). These
+# are surfaced through ``on_event("tool_signal", …)`` so a host (e.g. Lnagent) can journal what
+# the fleet experienced and learn instincts from recurring failure→recovery / ingestion-guard
+# patterns. Pure observation — extraction never changes the scout's behaviour.
+_FAIL_TAG_RE = re.compile(r"ERROR running \S+ \[([a-z_]+)\]")
+_GUARD_FLAG_RE = re.compile(r"⚠flagged\(([^)]*)\)")
+
+
+def signals_from_result(result: str) -> list[str]:
+    """Extract ``failure:<class>`` / ``guard:flag:<flag>`` / ``guard:blocked`` tokens from a
+    tool-result string (empty list when the result is clean)."""
+    out: list[str] = []
+    m = _FAIL_TAG_RE.search(result)
+    if m:
+        out.append(f"failure:{m.group(1)}")
+    if "BLOCKED by gate guard" in result:
+        out.append("guard:blocked")
+    for fm in _GUARD_FLAG_RE.finditer(result):
+        for flag in fm.group(1).split(","):
+            flag = flag.strip()
+            if flag:
+                out.append(f"guard:flag:{flag}")
+    return out
+
 
 def _attach_sources(text: str, registry):
     """足軽ターボ finalize: resolve the [Sn] ids the scout cited to VERBATIM URLs, replace its
@@ -182,6 +208,8 @@ async def run_ashigaru(llm: LLMClient, toolbox: ToolBox, task: str, cfg: Config,
             if on_event:
                 on_event("worker_tool", {"index": index, "step": 0, "tool": seed_tool,
                                          "args": seed_args, "auto": True})
+                for sig in signals_from_result(seed_res):
+                    on_event("tool_signal", {"index": index, "step": 0, "signal": sig})
             messages.append({"role": "assistant",
                              "content": f"<tool>{json.dumps({'name': seed_tool, 'arguments': seed_args})}</tool>"})
             messages.append(tool_result_message(seed_tool, seed_res))
@@ -229,6 +257,9 @@ async def run_ashigaru(llm: LLMClient, toolbox: ToolBox, task: str, cfg: Config,
         if on_event:
             on_event("worker_tool", {"index": index, "step": step, "tool": act.name, "args": act.args})
         result = await toolbox.run(act.name, act.args)
+        if on_event:
+            for sig in signals_from_result(result):
+                on_event("tool_signal", {"index": index, "step": step, "signal": sig})
         if act.name in _READ_TOOLS:
             has_read = True
         if act.name == "fetch_url":

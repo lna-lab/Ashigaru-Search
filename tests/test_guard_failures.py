@@ -8,6 +8,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from ashigaru.guard import Verdict, inspect_content, inspect_search_results, inspect_url  # noqa: E402
 from ashigaru.failures import FailureClass, classify  # noqa: E402
+from ashigaru.worker import signals_from_result  # noqa: E402
 
 
 def main():
@@ -42,6 +43,16 @@ def main():
     assert classify("Read timed out").cls == FailureClass.MODEL_TIMEOUT
     assert classify("SearXNG returned 0 results").cls == FailureClass.SEARCH_FAILURE
     print("  ✓ service_down / parse / oom(non-recoverable) / timeout / search classified")
+
+    print("\n── tool-result signals (failure-class + guard verdict → on_event) ──")
+    assert signals_from_result("ERROR running fetch_url [service_down]: ConnError") == ["failure:service_down"]
+    assert signals_from_result("BLOCKED by gate guard — contaminated (flags=['x'])") == ["guard:blocked"]
+    assert signals_from_result("[S1] t  ⚠flagged(prompt_injection,seo_spam)") == [
+        "guard:flag:prompt_injection", "guard:flag:seo_spam"]
+    assert signals_from_result("clean, nothing flagged") == []
+    combo = signals_from_result("ERROR running web_search [search_failure]: x\n⚠flagged(ai_generated_signal)")
+    assert combo == ["failure:search_failure", "guard:flag:ai_generated_signal"], combo
+    print(f"  ✓ failure/blocked/flag tokens extracted; clean→[]; combined={combo}")
 
     print("\n✅ guard + failures OK")
 
