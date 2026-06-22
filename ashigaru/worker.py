@@ -66,6 +66,16 @@ _LEGACY_SOURCE_RULE = ("Read at least one source/document in full before your <f
 _FALLBACK_START_HINT = ("Start with web_search (and/or doc_search for local), then fetch_url / "
                         "read_chunk to READ the best sources before concluding.")
 
+# 蔵-recall mode: steer the (premium) Commander to read the fleet's OWN memory instead of the
+# web — flat recall first, then NAVIGATE the knowledge graph if one is present. Other scouts
+# cover the web, so this pass is pure prior-knowledge.
+_RECALL_START_HINT = (
+    "Consult ONLY our own local 蔵 (memory) — do NOT web_search; other scouts cover the web. "
+    "Start with doc_search on the goal; then, if graph tools are present, use tree_overview and "
+    "graph_neighbors / graph_related_docs to pivot to related entities and get_document / "
+    "read_chunk to READ the most relevant notes in full. Report what we ALREADY know, or say "
+    "plainly that memory holds nothing relevant.")
+
 SUPERVISOR_SYSTEM = """You are the Commander supervising a scout after each lead it reports. \
 The scout is a small model and may dig aimlessly — your job is to prevent wasted effort and \
 keep it on the overall goal. Given the goal, the scout's current sub-question, and the lead it \
@@ -112,17 +122,21 @@ async def _supervise(orch: LLMClient, overall: str, subq: str, evidence: str,
 
 async def run_ashigaru(llm: LLMClient, toolbox: ToolBox, task: str, cfg: Config,
                        index: int = 0, on_event=None, orch: LLMClient | None = None,
-                       overall: str = "") -> WorkerResult:
+                       overall: str = "", recall: bool = False) -> WorkerResult:
     subq = task
     registry = getattr(toolbox, "sources", None)      # 足軽ターボ SourceRegistry, or None (legacy)
+    # recall mode reads our 蔵 (memory/graph) instead of the web — see _RECALL_START_HINT.
+    hint = _RECALL_START_HINT if recall else getattr(toolbox, "start_hint", _FALLBACK_START_HINT)
     sys_prompt = WORKER_SYSTEM.format(
         tools=toolbox.render_docs(), max_steps=cfg.worker_max_steps,
-        start_hint=getattr(toolbox, "start_hint", _FALLBACK_START_HINT),
+        start_hint=hint,
         source_example=_REF_SOURCE_EXAMPLE if registry is not None else _LEGACY_SOURCE_EXAMPLE,
         source_rule=_REF_SOURCE_RULE if registry is not None else _LEGACY_SOURCE_RULE)
+    intro = ("From our OWN memory (蔵), surface what we already know about this goal:"
+             if recall else "Sub-question to investigate:")
     messages = [
         {"role": "system", "content": sys_prompt},
-        {"role": "user", "content": f"Sub-question to investigate:\n{task}\n\nBegin."},
+        {"role": "user", "content": f"{intro}\n{task}\n\nBegin."},
     ]
     sources: list[str] = []
     notes: list[str] = []          # interim reports filed when the Commander says 'regroup'
@@ -148,7 +162,8 @@ async def run_ashigaru(llm: LLMClient, toolbox: ToolBox, task: str, cfg: Config,
     # registered ([Sn]) evidence — turning an unreliable agentic task into the grounded-summary
     # task a small model is good at. (Skipped for test doubles without a real toolbox.)
     if cfg.auto_first_search and hasattr(toolbox, "get"):
-        seed_tool = next((t for t in ("web_search", "doc_search") if toolbox.get(t)), None)
+        seed_order = ("doc_search", "web_search") if recall else ("web_search", "doc_search")
+        seed_tool = next((t for t in seed_order if toolbox.get(t)), None)
         if seed_tool:
             seed_args = {"query": task}
             seed_res = await toolbox.run(seed_tool, seed_args)

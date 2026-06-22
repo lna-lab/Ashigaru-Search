@@ -257,10 +257,28 @@ async def research(question: str, cfg: Config | None = None, on_event=None) -> R
             return await run_ashigaru(orch, toolbox, question, cfg, index=i, on_event=on_event,
                                       orch=None, overall=question)
 
+    async def _commander_recall(i: int) -> WorkerResult:
+        # 蔵-recall: the idle Commander reads our OWN memory (doc_search + knowledge-graph
+        # navigation) on the overall question, concurrent with the web scouts. Its findings join
+        # the evidence pool so synthesis fuses prior knowledge with the fresh web findings.
+        async with sem:
+            if on_event:
+                on_event("worker_start", {"index": i, "task": question, "recall": True})
+            w = await run_ashigaru(orch, toolbox, question, cfg, index=i, on_event=on_event,
+                                   orch=None, overall=question, recall=True)
+            w.task = f"【蔵/我々の既知の記憶】 {w.task}"   # label it as memory for synthesis
+            return w
+
+    # 蔵-recall fires only when the toolbox actually carries a local memory tool.
+    _has_local = hasattr(toolbox, "get") and (
+        toolbox.get("doc_search") or toolbox.get("tree_overview"))
+    recall_on = cfg.recall_commander and bool(_has_local)
+
     try:
         escalations = 0
         subs: list[str] = []
         workers: list[WorkerResult] = []
+        recall_worker: WorkerResult | None = None   # 蔵-recall result, held across escalations
         while True:
             cfg.max_subquestions = count
             subs = await _plan(orch, question, cfg, exact=(explicit or escalations > 0))
@@ -269,9 +287,16 @@ async def research(question: str, cfg: Config | None = None, on_event=None) -> R
                                   "requested": count if (explicit or escalations) else None,
                                   "escalation": escalations})
             scout_coros = [_one(i, q) for i, q in enumerate(subs)]
+            slot = len(subs)
             if cfg.commander_scout:
-                scout_coros.append(_commander_scout(len(subs)))
-            workers = list(await asyncio.gather(*scout_coros))
+                scout_coros.append(_commander_scout(slot)); slot += 1
+            do_recall = recall_on and recall_worker is None   # read memory once, on round 0
+            if do_recall:
+                scout_coros.append(_commander_recall(slot)); slot += 1
+            batch = list(await asyncio.gather(*scout_coros))
+            if do_recall:
+                recall_worker = batch.pop()   # the recall pass was appended last; hold it aside
+            workers = batch   # only the real scouts drive the escalation/quality assessment
 
             if not cfg.escalate or escalations >= cfg.max_escalations:
                 break
@@ -288,6 +313,9 @@ async def research(question: str, cfg: Config | None = None, on_event=None) -> R
             kind, count = new_kind, new_count
             escalations += 1
 
+        # fold the 蔵-recall pass into the evidence pool so synthesis + sources see it too
+        if recall_worker is not None and (recall_worker.findings or "").strip():
+            workers = list(workers) + [recall_worker]
         if on_event:
             on_event("synthesize", {"workers": len(workers)})
         answer = await _synthesize(orch, question, workers, cfg)

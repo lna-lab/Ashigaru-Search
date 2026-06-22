@@ -122,6 +122,11 @@ class Config:
     # Player-coach: after planning, send the Commander out as one extra PREMIUM scout (it's
     # otherwise idle during the scout phase). Raises the floor of the synthesis evidence pool.
     commander_scout: bool = field(default_factory=lambda: _b("ASHIGARU_COMMANDER_SCOUT", False))
+    # 蔵-recall: also send the idle Commander to read the fleet's OWN memory (doc_search + any
+    # knowledge-graph navigation tools) on the OVERALL question, concurrent with the web scouts,
+    # so synthesis fuses prior knowledge with the fresh web findings. No-op when the toolbox
+    # carries no local tool (doc_search / emaki). Speed-neutral (uses the otherwise-idle 27B).
+    recall_commander: bool = field(default_factory=lambda: _b("ASHIGARU_RECALL_COMMANDER", False))
     verbose: bool = field(default_factory=lambda: _b("ASHIGARU_VERBOSE", True))
 
     def __post_init__(self):
